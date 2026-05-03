@@ -53,6 +53,11 @@ _PLATFORM_COL_KEYWORDS = {
 # Connection helpers
 # ---------------------------------------------------------------------------
 
+def _check_statement_response(response) -> None:
+    if response.status and response.status.error:
+        raise Exception(response.status.error.message)
+
+
 def run_query(query: str) -> pd.DataFrame:
     log.info(f"run_query: {query[:120].strip()}")
     try:
@@ -63,6 +68,7 @@ def run_query(query: str) -> pd.DataFrame:
             warehouse_id=warehouse_id,
             wait_timeout="50s",
         )
+        _check_statement_response(response)
         if response.result is None or response.manifest is None:
             return pd.DataFrame()
         cols = [col.name for col in (response.manifest.schema.columns or [])]
@@ -79,11 +85,12 @@ def run_statement(statement: str) -> None:
     try:
         wc = get_workspace_client()
         warehouse_id = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
-        wc.statement_execution.execute_statement(
+        response = wc.statement_execution.execute_statement(
             statement=statement,
             warehouse_id=warehouse_id,
             wait_timeout="50s",
         )
+        _check_statement_response(response)
         log.info("run_statement: OK")
     except Exception as e:
         log.error(f"run_statement failed: {e}")
