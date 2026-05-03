@@ -52,13 +52,24 @@ _PLATFORM_COL_KEYWORDS = {
 
 def _db_conn_params() -> dict:
     host = os.environ.get("DATABRICKS_HOST", "").rstrip("/").replace("https://", "")
-    token = os.environ.get("DATABRICKS_TOKEN", "")
     warehouse_id = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
-    return {
+    token = os.environ.get("DATABRICKS_TOKEN", "")
+    client_id = os.environ.get("DATABRICKS_CLIENT_ID", "")
+    client_secret = os.environ.get("DATABRICKS_CLIENT_SECRET", "")
+
+    params = {
         "server_hostname": host,
         "http_path": f"/sql/1.0/warehouses/{warehouse_id}",
-        "access_token": token,
     }
+
+    if token:
+        params["access_token"] = token
+    elif client_id and client_secret:
+        params["auth_type"] = "databricks-oauth"
+        params["oauth_client_id"] = client_id
+        params["oauth_client_secret"] = client_secret
+
+    return params
 
 
 def run_query(query: str) -> pd.DataFrame:
