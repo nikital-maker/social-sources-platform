@@ -50,26 +50,27 @@ _PLATFORM_COL_KEYWORDS = {
 # Connection helpers
 # ---------------------------------------------------------------------------
 
+def _get_token() -> str:
+    token = os.environ.get("DATABRICKS_TOKEN", "")
+    if token:
+        return token
+    # On Databricks Apps, DATABRICKS_TOKEN is not injected — use SDK credential chain
+    try:
+        headers = {}
+        get_workspace_client().config.authenticate(headers)
+        return headers.get("Authorization", "").replace("Bearer ", "")
+    except Exception:
+        return ""
+
+
 def _db_conn_params() -> dict:
     host = os.environ.get("DATABRICKS_HOST", "").rstrip("/").replace("https://", "")
     warehouse_id = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
-    token = os.environ.get("DATABRICKS_TOKEN", "")
-    client_id = os.environ.get("DATABRICKS_CLIENT_ID", "")
-    client_secret = os.environ.get("DATABRICKS_CLIENT_SECRET", "")
-
-    params = {
+    return {
         "server_hostname": host,
         "http_path": f"/sql/1.0/warehouses/{warehouse_id}",
+        "access_token": _get_token(),
     }
-
-    if token:
-        params["access_token"] = token
-    elif client_id and client_secret:
-        params["auth_type"] = "databricks-oauth"
-        params["oauth_client_id"] = client_id
-        params["oauth_client_secret"] = client_secret
-
-    return params
 
 
 def run_query(query: str) -> pd.DataFrame:
