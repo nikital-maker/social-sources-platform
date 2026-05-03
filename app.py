@@ -504,13 +504,15 @@ def _do_import(raw_df, mapping, platform_override, col_hint_platform, meta_mappi
         metadata_json = json.dumps(meta_dict).replace("'", "\\'")
 
         new_id = str(uuid.uuid4())
+        url_esc = url_val.replace("'", "\\'")
+        plat_esc = plat.replace("'", "\\'")
         try:
             run_statement(f"""
                 MERGE INTO {SOURCES_TABLE} AS t
                 USING (SELECT
                     '{new_id}'                    AS id,
-                    '{url_val.replace("'", "\\'")}' AS url,
-                    '{plat.replace("'", "\\'")}' AS platform,
+                    '{url_esc}'                   AS url,
+                    '{plat_esc}'                  AS platform,
                     '{s("team")}'                AS team,
                     '{s("abuse_area")}'          AS abuse_area,
                     '{s("sub_abuse_area")}'      AS sub_abuse_area,
