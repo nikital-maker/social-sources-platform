@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import logging
 import os
 import re
 import uuid
@@ -17,6 +18,9 @@ except Exception:
 
 from databricks import sql as dbsql
 from databricks.sdk import WorkspaceClient
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -53,16 +57,23 @@ _PLATFORM_COL_KEYWORDS = {
 def _get_token() -> str:
     token = os.environ.get("DATABRICKS_TOKEN", "")
     if token:
+        log.info("Auth: using DATABRICKS_TOKEN from env")
         return token
-    # On Databricks Apps, DATABRICKS_TOKEN is not injected — use SDK credential chain
+    log.info("Auth: DATABRICKS_TOKEN not set, trying SDK credential chain")
     headers = {}
     get_workspace_client().config.authenticate(headers)
-    return headers.get("Authorization", "").replace("Bearer ", "")
+    sdk_token = headers.get("Authorization", "").replace("Bearer ", "")
+    if sdk_token:
+        log.info("Auth: SDK credential chain succeeded")
+    else:
+        log.error("Auth: SDK credential chain returned no token")
+    return sdk_token
 
 
 def _db_conn_params() -> dict:
     host = os.environ.get("DATABRICKS_HOST", "").rstrip("/").replace("https://", "")
     warehouse_id = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
+    log.info(f"DB connect: host={host} warehouse={warehouse_id}")
     return {
         "server_hostname": host,
         "http_path": f"/sql/1.0/warehouses/{warehouse_id}",
@@ -71,20 +82,32 @@ def _db_conn_params() -> dict:
 
 
 def run_query(query: str) -> pd.DataFrame:
-    with dbsql.connect(**_db_conn_params()) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(query)
-            if cursor.description is None:
-                return pd.DataFrame()
-            cols = [d[0] for d in cursor.description]
-            rows = cursor.fetchall()
-            return pd.DataFrame(rows, columns=cols)
+    log.info(f"run_query: {query[:120].strip()}")
+    try:
+        with dbsql.connect(**_db_conn_params()) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+                if cursor.description is None:
+                    return pd.DataFrame()
+                cols = [d[0] for d in cursor.description]
+                rows = cursor.fetchall()
+                log.info(f"run_query: returned {len(rows)} rows")
+                return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        log.error(f"run_query failed: {e}")
+        raise
 
 
 def run_statement(statement: str) -> None:
-    with dbsql.connect(**_db_conn_params()) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(statement)
+    log.info(f"run_statement: {statement[:120].strip()}")
+    try:
+        with dbsql.connect(**_db_conn_params()) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(statement)
+        log.info("run_statement: OK")
+    except Exception as e:
+        log.error(f"run_statement failed: {e}")
+        raise
 
 
 @st.cache_resource
@@ -865,6 +888,49 @@ def sidebar_add_source():
             st.sidebar.error(f"Insert failed: {e}")
 
 
+def page_diagnostics():
+    st.title("Diagnostics")
+
+    st.subheader("Environment")
+    st.code(
+        f"DATABRICKS_HOST:         {os.environ.get('DATABRICKS_HOST', '(not set)')}\n"
+        f"DATABRICKS_WAREHOUSE_ID: {os.environ.get('DATABRICKS_WAREHOUSE_ID', '(not set)')}\n"
+        f"DATABRICKS_TOKEN:        {'(set)' if os.environ.get('DATABRICKS_TOKEN') else '(not set)'}\n"
+        f"DATABRICKS_CLIENT_ID:    {'(set)' if os.environ.get('DATABRICKS_CLIENT_ID') else '(not set)'}\n"
+    )
+
+    st.subheader("SDK auth")
+    try:
+        wc = get_workspace_client()
+        me = wc.current_user.me()
+        st.success(f"WorkspaceClient OK — logged in as {me.user_name}")
+    except Exception as e:
+        st.error(f"WorkspaceClient failed: {e}")
+
+    st.subheader("Token via SDK credential chain")
+    try:
+        headers = {}
+        get_workspace_client().config.authenticate(headers)
+        token = headers.get("Authorization", "")
+        st.success(f"Token obtained: {token[:20]}...") if token else st.error("No token returned")
+    except Exception as e:
+        st.error(f"authenticate() failed: {e}")
+
+    st.subheader("SQL connection test")
+    try:
+        df = run_query("SELECT 1 AS ok")
+        st.success(f"SQL connection OK: {df.to_dict()}")
+    except Exception as e:
+        st.error(f"SQL connection failed: {e}")
+
+    st.subheader("Table access test")
+    try:
+        df = run_query(f"SELECT COUNT(*) AS cnt FROM {SOURCES_TABLE}")
+        st.success(f"social_sources row count: {df['cnt'].iloc[0]}")
+    except Exception as e:
+        st.error(f"Table query failed: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Navigation
 # ---------------------------------------------------------------------------
@@ -875,6 +941,7 @@ PAGES = {
     "Pending Review":  page_pending_review,
     "Run Scrapers":    page_run_scrapers,
     "Dashboard":       page_dashboard,
+    "Diagnostics":     page_diagnostics,
 }
 
 st.set_page_config(page_title="Social Sources Platform", layout="wide")
