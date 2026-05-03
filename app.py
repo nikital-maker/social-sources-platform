@@ -55,12 +55,9 @@ def _get_token() -> str:
     if token:
         return token
     # On Databricks Apps, DATABRICKS_TOKEN is not injected — use SDK credential chain
-    try:
-        headers = {}
-        get_workspace_client().config.authenticate(headers)
-        return headers.get("Authorization", "").replace("Bearer ", "")
-    except Exception:
-        return ""
+    headers = {}
+    get_workspace_client().config.authenticate(headers)
+    return headers.get("Authorization", "").replace("Bearer ", "")
 
 
 def _db_conn_params() -> dict:
@@ -257,7 +254,12 @@ def _confirm_delete_dialog():
 def page_sources_browser():
     st.title("Sources Browser")
 
-    df = load_sources()
+    try:
+        df = load_sources()
+    except Exception as e:
+        st.error(f"Failed to load sources: {e}")
+        st.code(f"host={os.environ.get('DATABRICKS_HOST','(not set)')}\nwarehouse={os.environ.get('DATABRICKS_WAREHOUSE_ID','(not set)')}\ntoken_set={'DATABRICKS_TOKEN' in os.environ}")
+        return
 
     if df.empty:
         st.info("No sources yet. Use Import or the sidebar form to add sources.")
