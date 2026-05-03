@@ -60,8 +60,7 @@ def _get_token() -> str:
         log.info("Auth: using DATABRICKS_TOKEN from env")
         return token
     log.info("Auth: DATABRICKS_TOKEN not set, trying SDK credential chain")
-    headers = {}
-    get_workspace_client().config.authenticate(headers)
+    headers = get_workspace_client().config.authenticate()
     sdk_token = headers.get("Authorization", "").replace("Bearer ", "")
     if sdk_token:
         log.info("Auth: SDK credential chain succeeded")
@@ -909,8 +908,7 @@ def page_diagnostics():
 
     st.subheader("Token via SDK credential chain")
     try:
-        headers = {}
-        get_workspace_client().config.authenticate(headers)
+        headers = get_workspace_client().config.authenticate()
         token = headers.get("Authorization", "")
         st.success(f"Token obtained: {token[:20]}...") if token else st.error("No token returned")
     except Exception as e:
