@@ -16,7 +16,6 @@ try:
 except Exception:
     pass
 
-from databricks import sql as dbsql
 from databricks.sdk import WorkspaceClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -54,44 +53,22 @@ _PLATFORM_COL_KEYWORDS = {
 # Connection helpers
 # ---------------------------------------------------------------------------
 
-def _get_token() -> str:
-    token = os.environ.get("DATABRICKS_TOKEN", "")
-    if token:
-        log.info("Auth: using DATABRICKS_TOKEN from env")
-        return token
-    log.info("Auth: DATABRICKS_TOKEN not set, trying SDK credential chain")
-    headers = get_workspace_client().config.authenticate()
-    sdk_token = headers.get("Authorization", "").replace("Bearer ", "")
-    if sdk_token:
-        log.info("Auth: SDK credential chain succeeded")
-    else:
-        log.error("Auth: SDK credential chain returned no token")
-    return sdk_token
-
-
-def _db_conn_params() -> dict:
-    host = os.environ.get("DATABRICKS_HOST", "").rstrip("/").replace("https://", "")
-    warehouse_id = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
-    log.info(f"DB connect: host={host} warehouse={warehouse_id}")
-    return {
-        "server_hostname": host,
-        "http_path": f"/sql/1.0/warehouses/{warehouse_id}",
-        "access_token": _get_token(),
-    }
-
-
 def run_query(query: str) -> pd.DataFrame:
     log.info(f"run_query: {query[:120].strip()}")
     try:
-        with dbsql.connect(**_db_conn_params()) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(query)
-                if cursor.description is None:
-                    return pd.DataFrame()
-                cols = [d[0] for d in cursor.description]
-                rows = cursor.fetchall()
-                log.info(f"run_query: returned {len(rows)} rows")
-                return pd.DataFrame(rows, columns=cols)
+        wc = get_workspace_client()
+        warehouse_id = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
+        response = wc.statement_execution.execute_statement(
+            statement=query,
+            warehouse_id=warehouse_id,
+            wait_timeout="50s",
+        )
+        if response.result is None or response.manifest is None:
+            return pd.DataFrame()
+        cols = [col.name for col in (response.manifest.schema.columns or [])]
+        data = response.result.data_array or []
+        log.info(f"run_query: returned {len(data)} rows")
+        return pd.DataFrame(data, columns=cols)
     except Exception as e:
         log.error(f"run_query failed: {e}")
         raise
@@ -100,9 +77,13 @@ def run_query(query: str) -> pd.DataFrame:
 def run_statement(statement: str) -> None:
     log.info(f"run_statement: {statement[:120].strip()}")
     try:
-        with dbsql.connect(**_db_conn_params()) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(statement)
+        wc = get_workspace_client()
+        warehouse_id = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
+        wc.statement_execution.execute_statement(
+            statement=statement,
+            warehouse_id=warehouse_id,
+            wait_timeout="50s",
+        )
         log.info("run_statement: OK")
     except Exception as e:
         log.error(f"run_statement failed: {e}")
@@ -910,7 +891,10 @@ def page_diagnostics():
     try:
         headers = get_workspace_client().config.authenticate()
         token = headers.get("Authorization", "")
-        st.success(f"Token obtained: {token[:20]}...") if token else st.error("No token returned")
+        if token:
+            st.success(f"Token obtained: {token[:20]}...")
+        else:
+            st.error("No token returned")
     except Exception as e:
         st.error(f"authenticate() failed: {e}")
 
