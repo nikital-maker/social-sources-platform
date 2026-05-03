@@ -9,4 +9,4 @@ command:
 
 env:
   - name: DATABRICKS_WAREHOUSE_ID
-    valueFrom: secret
+    value: "2ee693873054f90d"
