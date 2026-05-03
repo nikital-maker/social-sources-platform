@@ -1,9 +1,11 @@
 """
-Run once to create the Unity Catalog schema and Delta tables.
+Run once to create (or recreate) the Unity Catalog schema and Delta tables.
 
 Usage:
     python setup_tables.py
 """
+
+import os
 
 try:
     from dotenv import load_dotenv
@@ -11,66 +13,59 @@ try:
 except Exception:
     pass
 
-from databricks.connect import DatabricksSession
+from databricks import sql
 
-spark = DatabricksSession.builder.getOrCreate()
+host = os.environ["DATABRICKS_HOST"].rstrip("/").replace("https://", "")
+token = os.environ["DATABRICKS_TOKEN"]
+warehouse_id = os.environ["DATABRICKS_WAREHOUSE_ID"]
+http_path = f"/sql/1.0/warehouses/{warehouse_id}"
 
-# Create catalog schema if missing
-spark.sql("CREATE SCHEMA IF NOT EXISTS main.social")
-
-# ---------------------------------------------------------------------------
-# sources — master deduplicated table
-# ---------------------------------------------------------------------------
-spark.sql(
+STATEMENTS = [
+    "DROP TABLE IF EXISTS af_delivery_dev.data_collection.social_sources_staging",
+    "DROP TABLE IF EXISTS af_delivery_dev.data_collection.social_sources",
     """
-    CREATE TABLE IF NOT EXISTS main.social.sources (
-        id           STRING    NOT NULL COMMENT 'UUID primary key',
-        platform     STRING    NOT NULL COMMENT 'Telegram | Twitter | TikTok',
-        identifier   STRING    NOT NULL COMMENT '@handle, channel URL, etc.',
-        display_name STRING,
-        metadata     STRING    COMMENT 'JSON blob for extra attributes',
-        status       STRING    NOT NULL COMMENT 'active | inactive',
-        added_at     TIMESTAMP NOT NULL,
-        last_seen_at TIMESTAMP NOT NULL,
-        added_by     STRING
+    CREATE TABLE IF NOT EXISTS af_delivery_dev.data_collection.social_sources (
+        id             STRING    NOT NULL COMMENT 'UUID primary key',
+        url            STRING    NOT NULL COMMENT 'Source URL or account link',
+        platform       STRING    COMMENT 'Telegram | Twitter/X | TikTok | Instagram | YouTube | Facebook | Other',
+        team           STRING    COMMENT 'Owning team: CT, HS, CS, etc.',
+        abuse_area     STRING    COMMENT 'Comma-separated abuse area classifications',
+        sub_abuse_area STRING    COMMENT 'Comma-separated sub-classifications',
+        notes          STRING,
+        relevancy      STRING    COMMENT 'Yes | No | Low | Medium | High | True | False',
+        metadata       STRING    COMMENT 'JSON: name, username, bio, profile_pic',
+        added_at       TIMESTAMP NOT NULL,
+        added_by       STRING
     )
     USING DELTA
-    COMMENT 'Master deduplicated social media sources'
+    COMMENT 'Master social media sources'
+    """,
     """
-)
-
-# Delta Lake does not enforce UNIQUE constraints but we record the intent
-# via a table property for documentation and upstream tooling.
-spark.sql(
-    """
-    ALTER TABLE main.social.sources
-    SET TBLPROPERTIES ('unique_key' = 'platform,identifier')
-    """
-)
-
-# ---------------------------------------------------------------------------
-# sources_staging — raw feed from scrapers
-# ---------------------------------------------------------------------------
-spark.sql(
-    """
-    CREATE TABLE IF NOT EXISTS main.social.sources_staging (
-        id           STRING,
-        platform     STRING    NOT NULL,
-        identifier   STRING    NOT NULL,
-        display_name STRING,
-        metadata     STRING,
-        status       STRING,
-        added_at     TIMESTAMP,
-        last_seen_at TIMESTAMP,
-        added_by     STRING,
-        scraper_name STRING    COMMENT 'Name of the scraper job that wrote this row',
-        raw_record   STRING    COMMENT 'Original JSON payload from the scraper'
+    CREATE TABLE IF NOT EXISTS af_delivery_dev.data_collection.social_sources_staging (
+        id             STRING,
+        url            STRING    NOT NULL,
+        platform       STRING,
+        team           STRING,
+        abuse_area     STRING,
+        sub_abuse_area STRING,
+        notes          STRING,
+        relevancy      STRING,
+        metadata       STRING,
+        added_at       TIMESTAMP,
+        added_by       STRING,
+        scraper_name   STRING    COMMENT 'Name of the scraper job that wrote this row',
+        raw_record     STRING    COMMENT 'Original JSON payload from the scraper'
     )
     USING DELTA
     COMMENT 'Raw staging feed from scraper jobs, pending review/dedup'
-    """
-)
+    """,
+]
 
-print("Tables created (or already exist):")
-print("  main.social.sources")
-print("  main.social.sources_staging")
+with sql.connect(server_hostname=host, http_path=http_path, access_token=token) as conn:
+    with conn.cursor() as cursor:
+        for stmt in STATEMENTS:
+            cursor.execute(stmt)
+
+print("Tables created:")
+print("  af_delivery_dev.data_collection.social_sources")
+print("  af_delivery_dev.data_collection.social_sources_staging")

@@ -1,4 +1,8 @@
 streamlit>=1.32.0
 databricks-sdk>=0.20.0
-databricks-connect>=14.0.0
+databricks-sql-connector>=3.0.0
+pandas>=2.0.0
+pyarrow>=14.0.0
 python-dotenv>=1.0.0
+gspread>=6.0.0
+oauth2client>=4.1.3
