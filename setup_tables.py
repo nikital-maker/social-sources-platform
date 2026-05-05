@@ -23,13 +23,15 @@ warehouse_id = os.environ["DATABRICKS_WAREHOUSE_ID"]
 http_path = f"/sql/1.0/warehouses/{warehouse_id}"
 
 _SCHEMA = "af_delivery_dev.data_collection"
+_TABLE_SUFFIX = os.environ.get("TABLE_SUFFIX", "")  # e.g. "_dev" locally, "" on platform
 
 TEAM_TABLES = {
-    "Child Safety":       "social_sources_child_safety",
-    "Human Exploitation": "social_sources_human_exploitation",
-    "Hate Speech":        "social_sources_hate_speech",
-    "NCII":               "social_sources_ncii",
-    "Illegal Goods":      "social_sources_illegal_goods",
+    "Child Safety":       f"social_sources_child_safety{_TABLE_SUFFIX}",
+    "Human Exploitation": f"social_sources_human_exploitation{_TABLE_SUFFIX}",
+    "Hate Speech":        f"social_sources_hate_speech{_TABLE_SUFFIX}",
+    "NCII":               f"social_sources_ncii{_TABLE_SUFFIX}",
+    "Illegal Goods":      f"social_sources_illegal_goods{_TABLE_SUFFIX}",
+    "TEST":               f"social_sources_test{_TABLE_SUFFIX}",
 }
 
 _SOURCES_DDL = """
@@ -51,7 +53,7 @@ _SOURCES_DDL = """
 """
 
 _STAGING_DDL = f"""
-    CREATE TABLE IF NOT EXISTS {_SCHEMA}.social_sources_staging (
+    CREATE TABLE IF NOT EXISTS {_SCHEMA}.social_sources_staging{_TABLE_SUFFIX} (
         id             STRING,
         url            STRING    NOT NULL,
         platform       STRING,
@@ -70,7 +72,7 @@ _STAGING_DDL = f"""
     COMMENT 'Raw staging feed from scraper jobs, pending review/dedup'
 """
 
-STATEMENTS = [f"DROP TABLE IF EXISTS {_SCHEMA}.social_sources"]
+STATEMENTS = []
 
 # Drop and recreate team tables
 for team, table_name in TEAM_TABLES.items():
@@ -79,7 +81,8 @@ for team, table_name in TEAM_TABLES.items():
     STATEMENTS.append(_SOURCES_DDL.format(table=full_table, team=team))
 
 # Staging table
-STATEMENTS.append(f"DROP TABLE IF EXISTS {_SCHEMA}.social_sources_staging")
+staging_table = f"{_SCHEMA}.social_sources_staging{_TABLE_SUFFIX}"
+STATEMENTS.append(f"DROP TABLE IF EXISTS {staging_table}")
 STATEMENTS.append(_STAGING_DDL)
 
 with sql.connect(server_hostname=host, http_path=http_path, access_token=token) as conn:
@@ -87,7 +90,8 @@ with sql.connect(server_hostname=host, http_path=http_path, access_token=token) 
         for stmt in STATEMENTS:
             cursor.execute(stmt)
 
-print("Tables created:")
+suffix_note = f" (suffix: {_TABLE_SUFFIX!r})" if _TABLE_SUFFIX else ""
+print(f"Tables created{suffix_note}:")
 for team, table_name in TEAM_TABLES.items():
     print(f"  {_SCHEMA}.{table_name}  ({team})")
-print(f"  {_SCHEMA}.social_sources_staging")
+print(f"  {staging_table}")

@@ -26,14 +26,16 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _SCHEMA = "af_delivery_dev.data_collection"
-STAGING_TABLE = f"{_SCHEMA}.social_sources_staging"
+_TABLE_SUFFIX = os.environ.get("TABLE_SUFFIX", "")  # e.g. "_dev" locally, "" on platform
+STAGING_TABLE = f"{_SCHEMA}.social_sources_staging{_TABLE_SUFFIX}"
 
 TEAMS = {
-    "Child Safety":       "social_sources_child_safety",
-    "Human Exploitation": "social_sources_human_exploitation",
-    "Hate Speech":        "social_sources_hate_speech",
-    "NCII":               "social_sources_ncii",
-    "Illegal Goods":      "social_sources_illegal_goods",
+    "Child Safety":       f"social_sources_child_safety{_TABLE_SUFFIX}",
+    "Human Exploitation": f"social_sources_human_exploitation{_TABLE_SUFFIX}",
+    "Hate Speech":        f"social_sources_hate_speech{_TABLE_SUFFIX}",
+    "NCII":               f"social_sources_ncii{_TABLE_SUFFIX}",
+    "Illegal Goods":      f"social_sources_illegal_goods{_TABLE_SUFFIX}",
+    "TEST":               f"social_sources_test{_TABLE_SUFFIX}",
 }
 
 PLATFORMS = ["Telegram", "Twitter/X", "TikTok", "Instagram", "YouTube", "Facebook", "Other"]
@@ -381,6 +383,11 @@ def page_import_sources():
     _impl()
 
 
+def page_telegram_workflow():
+    from modules.telegram_workflow import page_telegram_workflow as _impl
+    _impl()
+
+
 # ---------------------------------------------------------------------------
 # Page: Pending Review (scraper staging)
 # ---------------------------------------------------------------------------
@@ -653,12 +660,13 @@ def page_diagnostics():
 # ---------------------------------------------------------------------------
 
 PAGES = {
-    "Sources Browser": page_sources_browser,
-    "Import Sources":  page_import_sources,
-    "Pending Review":  page_pending_review,
-    "Run Scrapers":    page_run_scrapers,
-    "Dashboard":       page_dashboard,
-    "Diagnostics":     page_diagnostics,
+    "Sources Browser":    page_sources_browser,
+    "Import Sources":     page_import_sources,
+    "Pending Review":     page_pending_review,
+    "Run Scrapers":       page_run_scrapers,
+    "Telegram Workflow":  page_telegram_workflow,
+    "Dashboard":          page_dashboard,
+    "Diagnostics":        page_diagnostics,
 }
 
 if __name__ == "__main__":
