@@ -661,11 +661,12 @@ PAGES = {
     "Diagnostics":     page_diagnostics,
 }
 
-st.set_page_config(page_title="Social Sources Platform", layout="wide")
+if __name__ == "__main__":
+    st.set_page_config(page_title="Social Sources Platform", layout="wide")
 
-st.sidebar.selectbox("Team", list(TEAMS.keys()), key="selected_team")
-st.sidebar.divider()
-selected_page = st.sidebar.selectbox("Navigate", list(PAGES.keys()))
-sidebar_add_source()
+    st.sidebar.selectbox("Team", list(TEAMS.keys()), key="selected_team")
+    st.sidebar.divider()
+    selected_page = st.sidebar.selectbox("Navigate", list(PAGES.keys()))
+    sidebar_add_source()
 
-PAGES[selected_page]()
+    PAGES[selected_page]()
