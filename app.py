@@ -25,8 +25,16 @@ log = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-SOURCES_TABLE = "af_delivery_dev.data_collection.social_sources"
-STAGING_TABLE = "af_delivery_dev.data_collection.social_sources_staging"
+_SCHEMA = "af_delivery_dev.data_collection"
+STAGING_TABLE = f"{_SCHEMA}.social_sources_staging"
+
+TEAMS = {
+    "Child Safety":       "social_sources_child_safety",
+    "Human Exploitation": "social_sources_human_exploitation",
+    "Hate Speech":        "social_sources_hate_speech",
+    "NCII":               "social_sources_ncii",
+    "Illegal Goods":      "social_sources_illegal_goods",
+}
 
 PLATFORMS = ["Telegram", "Twitter/X", "TikTok", "Instagram", "YouTube", "Facebook", "Other"]
 RELEVANCY_OPTIONS = ["Yes", "No", "Low", "Medium", "High", "True", "False"]
@@ -132,6 +140,18 @@ def detect_platform_from_column_name(col: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Team / table routing
+# ---------------------------------------------------------------------------
+
+def get_selected_team() -> str:
+    return st.session_state.get("selected_team", list(TEAMS.keys())[0])
+
+
+def get_sources_table() -> str:
+    return f"{_SCHEMA}.{TEAMS[get_selected_team()]}"
+
+
+# ---------------------------------------------------------------------------
 # Google Sheets helpers (mirrors Utils_v2 auth logic)
 # ---------------------------------------------------------------------------
 
@@ -199,17 +219,17 @@ def _parse_gsheet_url(url: str) -> tuple:
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=60)
-def load_sources() -> pd.DataFrame:
-    return run_query(f"SELECT * FROM {SOURCES_TABLE} ORDER BY added_at DESC")
+def load_sources(table: str) -> pd.DataFrame:
+    return run_query(f"SELECT * FROM {table} ORDER BY added_at DESC")
 
 
 @st.cache_data(ttl=60)
-def load_staging() -> pd.DataFrame:
+def load_staging(sources_table: str) -> pd.DataFrame:
     return run_query(
         f"""
         SELECT s.*
         FROM {STAGING_TABLE} s
-        LEFT ANTI JOIN {SOURCES_TABLE} m ON s.url = m.url
+        LEFT ANTI JOIN {sources_table} m ON s.url = m.url
         """
     )
 
@@ -243,7 +263,7 @@ def multivalue_mask(series: pd.Series, selected: list) -> pd.Series:
 
 def _delete_sources_by_ids(ids: list[str]) -> None:
     escaped = ", ".join(f"'{i.replace(chr(39), chr(39)*2)}'" for i in ids)
-    run_statement(f"DELETE FROM {SOURCES_TABLE} WHERE id IN ({escaped})")
+    run_statement(f"DELETE FROM {get_sources_table()} WHERE id IN ({escaped})")
 
 
 @st.dialog("Confirm deletion")
@@ -262,10 +282,10 @@ def _confirm_delete_dialog():
 
 
 def page_sources_browser():
-    st.title("Sources Browser")
+    st.title(f"Sources Browser — {get_selected_team()}")
 
     try:
-        df = load_sources()
+        df = load_sources(get_sources_table())
     except Exception as e:
         st.error(f"Failed to load sources: {e}")
         st.code(f"host={os.environ.get('DATABRICKS_HOST','(not set)')}\nwarehouse={os.environ.get('DATABRICKS_WAREHOUSE_ID','(not set)')}\ntoken_set={'DATABRICKS_TOKEN' in os.environ}")
@@ -350,310 +370,15 @@ def page_sources_browser():
         st.rerun()
 
 
+
 # ---------------------------------------------------------------------------
-# Page: Import Sources
+# Page: Import Sources (logic lives in pages/import_sources.py)
 # ---------------------------------------------------------------------------
-
-_IMPORT_FIELD_KEYWORDS = {
-    "url":           ["url", "link", "account", "channel", "handle", "profile"],
-    "team":          ["team"],
-    "abuse_area":    ["abuse area", "abuse_area", "classification", "category", "abuse"],
-    "sub_abuse_area":["sub abuse", "sub_abuse", "subcategory", "sub category"],
-    "notes":         ["note", "comment", "description", "remark"],
-    "relevancy":     ["relevancy", "relevance", "relevant"],
-}
-
-_IMPORT_FIELD_LABELS = {
-    "url":           "URL / Link column *",
-    "team":          "Team column",
-    "abuse_area":    "Abuse Area column",
-    "sub_abuse_area":"Sub Abuse Area column",
-    "notes":         "Notes column",
-    "relevancy":     "Relevancy column",
-}
-
-
-def _auto_map(columns: list) -> dict:
-    mapping = {f: None for f in _IMPORT_FIELD_KEYWORDS}
-    for field, keywords in _IMPORT_FIELD_KEYWORDS.items():
-        for col in columns:
-            if any(k in col.lower() for k in keywords):
-                mapping[field] = col
-                break
-    return mapping
-
-
-def _parse_paste(text: str) -> pd.DataFrame | None:
-    for sep in ("\t", ",", ";"):
-        try:
-            df = pd.read_csv(io.StringIO(text), sep=sep)
-            if len(df.columns) > 1:
-                return df
-        except Exception:
-            pass
-    return None
-
-
-def _safe_val(row, col):
-    if not col:
-        return ""
-    v = str(row.get(col, "") or "")
-    return "" if v.lower() in ("nan", "none") else v
-
-
-def _render_import_ui(raw_df: pd.DataFrame):
-    st.subheader("Column Mapping")
-    cols_with_none = [None] + list(raw_df.columns)
-    auto = _auto_map(list(raw_df.columns))
-
-    def default_idx(field):
-        val = auto.get(field)
-        return cols_with_none.index(val) if val and val in cols_with_none else 0
-
-    left, right = st.columns(2)
-    mapping = {}
-    with left:
-        for field in ["url", "team", "abuse_area"]:
-            mapping[field] = st.selectbox(
-                _IMPORT_FIELD_LABELS[field], cols_with_none, index=default_idx(field)
-            )
-    with right:
-        for field in ["sub_abuse_area", "notes", "relevancy"]:
-            mapping[field] = st.selectbox(
-                _IMPORT_FIELD_LABELS[field], cols_with_none, index=default_idx(field)
-            )
-
-    if not mapping["url"]:
-        st.warning("Select the URL column to continue.")
-        return
-
-    col_hint_platform = detect_platform_from_column_name(mapping["url"])
-    platform_options = ["Auto-detect from URL"] + PLATFORMS
-    default_plat_idx = platform_options.index(col_hint_platform) if col_hint_platform and col_hint_platform in platform_options else 0
-
-    platform_override = st.selectbox(
-        "Platform override",
-        platform_options,
-        index=default_plat_idx,
-        help="Auto-detect reads platform from each URL. Or force a single platform for all rows.",
-    )
-    if col_hint_platform and platform_override == "Auto-detect from URL":
-        st.caption(f"Column name suggests platform: **{col_hint_platform}**")
-
-    # Metadata field mapping
-    st.subheader("Metadata Fields")
-    st.caption("Map additional source columns to metadata fields stored as JSON on each source.")
-    already_mapped = {v for v in mapping.values() if v}
-    remaining_cols = [c for c in raw_df.columns if c not in already_mapped]
-    if remaining_cols:
-        meta_init = pd.DataFrame({
-            "Include": [False] * len(remaining_cols),
-            "Source Column": remaining_cols,
-            "Metadata Field Name": remaining_cols,
-        })
-        meta_edited = st.data_editor(
-            meta_init,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Include": st.column_config.CheckboxColumn(required=True),
-                "Source Column": st.column_config.TextColumn(disabled=True),
-                "Metadata Field Name": st.column_config.TextColumn(),
-            },
-        )
-        meta_mapping = {
-            row["Metadata Field Name"].strip(): row["Source Column"]
-            for _, row in meta_edited[meta_edited["Include"] == True].iterrows()
-            if row["Metadata Field Name"].strip()
-        }
-    else:
-        st.caption("All columns are already mapped to standard fields.")
-        meta_mapping = {}
-
-    # Preview
-    preview = []
-    for _, row in raw_df.head(5).iterrows():
-        url_val = _safe_val(row, mapping["url"])
-        if platform_override == "Auto-detect from URL":
-            plat = detect_platform_from_url(url_val) if url_val else ""
-            if plat == "Unknown" and col_hint_platform:
-                plat = col_hint_platform
-        else:
-            plat = platform_override
-        meta_dict = {k: _safe_val(row, v) for k, v in meta_mapping.items() if _safe_val(row, v)}
-        preview.append({
-            "url": url_val,
-            "platform": plat,
-            "team": _safe_val(row, mapping["team"]),
-            "abuse_area": _safe_val(row, mapping["abuse_area"]),
-            "sub_abuse_area": _safe_val(row, mapping["sub_abuse_area"]),
-            "notes": _safe_val(row, mapping["notes"]),
-            "relevancy": _safe_val(row, mapping["relevancy"]),
-            "metadata": json.dumps(meta_dict) if meta_dict else "{}",
-        })
-
-    st.subheader(f"Preview — first {len(preview)} of {len(raw_df)} rows")
-    st.dataframe(pd.DataFrame(preview), use_container_width=True)
-
-    if st.button(f"Import {len(raw_df)} rows", type="primary"):
-        _do_import(raw_df, mapping, platform_override, col_hint_platform, meta_mapping)
-
-
-def _do_import(raw_df, mapping, platform_override, col_hint_platform, meta_mapping=None):
-    meta_mapping = meta_mapping or {}
-    user = current_user().replace("'", "\\'")
-    inserted = skipped = 0
-    errors = []
-    progress = st.progress(0, text="Importing…")
-    total = len(raw_df)
-
-    for i, (_, row) in enumerate(raw_df.iterrows()):
-        url_val = _safe_val(row, mapping["url"]).strip()
-        if not url_val:
-            skipped += 1
-            progress.progress((i + 1) / total)
-            continue
-
-        if platform_override == "Auto-detect from URL":
-            plat = detect_platform_from_url(url_val)
-            if plat == "Unknown" and col_hint_platform:
-                plat = col_hint_platform
-        else:
-            plat = platform_override
-
-        def s(field):
-            return _safe_val(row, mapping.get(field)).replace("'", "\\'")
-
-        meta_dict = {k: _safe_val(row, v) for k, v in meta_mapping.items() if _safe_val(row, v)}
-        metadata_json = json.dumps(meta_dict).replace("'", "\\'")
-
-        new_id = str(uuid.uuid4())
-        url_esc = url_val.replace("'", "\\'")
-        plat_esc = plat.replace("'", "\\'")
-        try:
-            run_statement(f"""
-                MERGE INTO {SOURCES_TABLE} AS t
-                USING (SELECT
-                    '{new_id}'                    AS id,
-                    '{url_esc}'                   AS url,
-                    '{plat_esc}'                  AS platform,
-                    '{s("team")}'                AS team,
-                    '{s("abuse_area")}'          AS abuse_area,
-                    '{s("sub_abuse_area")}'      AS sub_abuse_area,
-                    '{s("notes")}'               AS notes,
-                    '{s("relevancy")}'           AS relevancy,
-                    '{metadata_json}'            AS metadata,
-                    current_timestamp()          AS added_at,
-                    '{user}'                     AS added_by
-                ) AS src
-                ON t.url = src.url
-                WHEN NOT MATCHED THEN INSERT *
-            """)
-            inserted += 1
-        except Exception as e:
-            errors.append(f"Row {i + 1}: {e}")
-
-        progress.progress((i + 1) / total, text=f"Importing… {i + 1}/{total}")
-
-    progress.empty()
-    st.success(f"Imported {inserted} new sources. Skipped {skipped} empty rows.")
-    if errors:
-        with st.expander(f"{len(errors)} errors"):
-            for e in errors:
-                st.text(e)
-    load_sources.clear()
 
 
 def page_import_sources():
-    st.title("Import Sources")
-
-    tab_upload, tab_paste, tab_gsheet = st.tabs(["Upload CSV", "Paste Spreadsheet", "Google Sheets Link"])
-
-    with tab_upload:
-        uploaded = st.file_uploader("Upload a CSV file", type=["csv"])
-        if uploaded:
-            try:
-                raw_df = pd.read_csv(uploaded)
-                st.caption(f"{len(raw_df)} rows · {len(raw_df.columns)} columns")
-                _render_import_ui(raw_df)
-            except Exception as e:
-                st.error(f"Could not parse file: {e}")
-
-    with tab_paste:
-        st.caption(
-            "Paste tab-separated or CSV data from your spreadsheet. "
-            "Include column headers in the first row."
-        )
-        pasted = st.text_area(
-            "Paste data here",
-            height=200,
-            placeholder="Column1\tColumn2\t...\nvalue1\tvalue2\t...",
-        )
-        if pasted.strip():
-            raw_df = _parse_paste(pasted)
-            if raw_df is None or raw_df.empty:
-                st.error("Could not parse the pasted data. Ensure it has headers and is tab-, comma-, or semicolon-separated.")
-            else:
-                st.caption(f"{len(raw_df)} rows · {len(raw_df.columns)} columns")
-                _render_import_ui(raw_df)
-
-    with tab_gsheet:
-        st.caption(
-            "Enter a Google Sheets URL. The sheet must be shared with the service account. "
-            "If no tab is pre-selected in the URL, you can choose one after connecting."
-        )
-        gsheet_url = st.text_input(
-            "Google Sheets URL",
-            placeholder="https://docs.google.com/spreadsheets/d/.../.../edit#gid=0",
-        )
-
-        if gsheet_url.strip():
-            try:
-                spreadsheet_id, url_gid = _parse_gsheet_url(gsheet_url.strip())
-            except ValueError as e:
-                st.error(str(e))
-                return
-
-            if st.button("Connect & List Sheets"):
-                try:
-                    client = _get_gsheets_client()
-                    spreadsheet = client.open_by_key(spreadsheet_id)
-                    sheets = spreadsheet.worksheets()
-                    st.session_state["gsheet_sheets"] = [(ws.id, ws.title) for ws in sheets]
-                    st.session_state["gsheet_spreadsheet_id"] = spreadsheet_id
-                    st.session_state["gsheet_url_gid"] = url_gid
-                    st.session_state.pop("gsheet_df", None)
-                except Exception as e:
-                    st.error(f"Could not connect: {e}")
-
-            if "gsheet_sheets" in st.session_state and st.session_state.get("gsheet_spreadsheet_id") == spreadsheet_id:
-                sheets = st.session_state["gsheet_sheets"]
-                url_gid = st.session_state.get("gsheet_url_gid")
-
-                sheet_labels = [title for _, title in sheets]
-                default_idx = next(
-                    (i for i, (gid, _) in enumerate(sheets) if gid == url_gid), 0
-                )
-                selected_label = st.selectbox("Select tab", sheet_labels, index=default_idx)
-                selected_gid = next(gid for gid, title in sheets if title == selected_label)
-
-                if st.button("Load Tab"):
-                    try:
-                        client = _get_gsheets_client()
-                        ws = client.open_by_key(spreadsheet_id).get_worksheet_by_id(selected_gid)
-                        data = ws.get_all_values()
-                        if not data:
-                            st.warning("Sheet is empty.")
-                        else:
-                            raw_df = pd.DataFrame(data[1:], columns=data[0])
-                            st.session_state["gsheet_df"] = raw_df
-                    except Exception as e:
-                        st.error(f"Could not load tab: {e}")
-
-                if "gsheet_df" in st.session_state:
-                    raw_df = st.session_state["gsheet_df"]
-                    st.caption(f"{len(raw_df)} rows · {len(raw_df.columns)} columns")
-                    _render_import_ui(raw_df)
+    from pages.import_sources import page_import_sources as _impl
+    _impl()
 
 
 # ---------------------------------------------------------------------------
@@ -662,9 +387,9 @@ def page_import_sources():
 
 def page_pending_review():
     st.title("Pending Review")
-    st.caption("Sources written by scrapers that have not yet been approved.")
+    st.caption(f"Approving into: **{get_selected_team()}** table. Sources written by scrapers that have not yet been approved.")
 
-    df = load_staging()
+    df = load_staging(get_sources_table())
 
     if df.empty:
         st.success("No pending sources.")
@@ -684,13 +409,14 @@ def _approve_staged(row):
     url = str(row["url"]).replace("'", "\\'")
     new_id = str(uuid.uuid4())
     user = current_user().replace("'", "\\'")
+    target_table = get_sources_table()
 
     def sr(field):
         return str(row.get(field, "") or "").replace("'", "\\'")
 
     try:
         run_statement(f"""
-            MERGE INTO {SOURCES_TABLE} AS t
+            MERGE INTO {target_table} AS t
             USING (SELECT
                 '{new_id}'          AS id,
                 '{url}'             AS url,
@@ -780,10 +506,10 @@ def page_run_scrapers():
 # ---------------------------------------------------------------------------
 
 def page_dashboard():
-    st.title("Dashboard")
+    st.title(f"Dashboard — {get_selected_team()}")
 
     try:
-        df = load_sources()
+        df = load_sources(get_sources_table())
     except Exception as e:
         st.error(f"Could not load data: {e}")
         return
@@ -833,13 +559,13 @@ def page_dashboard():
 # ---------------------------------------------------------------------------
 
 def sidebar_add_source():
-    st.sidebar.header("Add New Source")
+    team = get_selected_team()
+    st.sidebar.header(f"Add Source → {team}")
 
     with st.sidebar.form("add_source_form", clear_on_submit=True):
         url = st.text_input("URL / Link *")
         platform_auto = st.checkbox("Auto-detect platform from URL", value=True)
         platform = st.selectbox("Platform", PLATFORMS, disabled=platform_auto)
-        team = st.text_input("Team (e.g. CT, HS, CS)")
         abuse_area = st.text_input("Abuse Area (comma-separated)")
         sub_abuse_area = st.text_input("Sub Abuse Area (comma-separated)")
         relevancy = st.selectbox("Relevancy", [""] + RELEVANCY_OPTIONS)
@@ -854,13 +580,14 @@ def sidebar_add_source():
         resolved_platform = detect_platform_from_url(url) if platform_auto else platform
         new_id = str(uuid.uuid4())
         user = current_user().replace("'", "\\'")
+        target_table = get_sources_table()
 
         def s(v):
             return str(v or "").replace("'", "\\'")
 
         try:
             run_statement(f"""
-                INSERT INTO {SOURCES_TABLE}
+                INSERT INTO {target_table}
                   (id, url, platform, team, abuse_area, sub_abuse_area,
                    notes, relevancy, metadata, added_at, added_by)
                 VALUES
@@ -914,8 +641,9 @@ def page_diagnostics():
 
     st.subheader("Table access test")
     try:
-        df = run_query(f"SELECT COUNT(*) AS cnt FROM {SOURCES_TABLE}")
-        st.success(f"social_sources row count: {df['cnt'].iloc[0]}")
+        table = get_sources_table()
+        df = run_query(f"SELECT COUNT(*) AS cnt FROM {table}")
+        st.success(f"{table} row count: {df['cnt'].iloc[0]}")
     except Exception as e:
         st.error(f"Table query failed: {e}")
 
@@ -935,6 +663,8 @@ PAGES = {
 
 st.set_page_config(page_title="Social Sources Platform", layout="wide")
 
+st.sidebar.selectbox("Team", list(TEAMS.keys()), key="selected_team")
+st.sidebar.divider()
 selected_page = st.sidebar.selectbox("Navigate", list(PAGES.keys()))
 sidebar_add_source()
 
