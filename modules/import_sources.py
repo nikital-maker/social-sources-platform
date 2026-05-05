@@ -70,6 +70,36 @@ def _safe_val(row, col):
 # Import UI
 # ---------------------------------------------------------------------------
 
+def _render_row_filters(raw_df: pd.DataFrame) -> pd.DataFrame:
+    with st.expander(f"Filter Rows — {len(raw_df)} rows loaded", expanded=False):
+        filter_cols = st.multiselect(
+            "Filter by columns",
+            options=list(raw_df.columns),
+            help="Only rows matching ALL selected filters will be imported.",
+            key="row_filter_cols",
+        )
+
+        filtered = raw_df.copy()
+        for col in filter_cols:
+            unique_vals = sorted(
+                raw_df[col].dropna().astype(str).unique().tolist(),
+                key=lambda x: x.lower(),
+            )
+            selected = st.multiselect(
+                f"Keep rows where **{col}** is:",
+                options=unique_vals,
+                default=unique_vals,
+                key=f"row_filter_{col}",
+            )
+            if selected:
+                filtered = filtered[filtered[col].astype(str).isin(selected)]
+
+        if filter_cols:
+            st.caption(f"**{len(filtered)}** of {len(raw_df)} rows will be imported after filters.")
+
+    return filtered
+
+
 def _render_import_ui(raw_df: pd.DataFrame):
     a = _app()
     PLATFORMS = a.PLATFORMS
@@ -81,6 +111,8 @@ def _render_import_ui(raw_df: pd.DataFrame):
     team = get_selected_team()
     target_table = get_sources_table()
     st.info(f"Importing into **{team}** table (`{target_table}`)")
+
+    filtered_df = _render_row_filters(raw_df)
 
     st.subheader("Column Mapping")
     cols_with_none = [None] + list(raw_df.columns)
@@ -144,7 +176,7 @@ def _render_import_ui(raw_df: pd.DataFrame):
     st.subheader("Metadata Fields")
     st.caption("Map additional source columns to metadata fields stored as JSON on each source.")
     already_mapped = {v for v in mapping.values() if v}
-    remaining_cols = [c for c in raw_df.columns if c not in already_mapped]
+    remaining_cols = [c for c in filtered_df.columns if c not in already_mapped]
     if remaining_cols:
         meta_init = pd.DataFrame({
             "Include": [False] * len(remaining_cols),
@@ -172,7 +204,7 @@ def _render_import_ui(raw_df: pd.DataFrame):
 
     # Preview
     preview = []
-    for _, row in raw_df.head(5).iterrows():
+    for _, row in filtered_df.head(5).iterrows():
         url_val = _safe_val(row, mapping["url"])
         if platform_override == "Auto-detect from URL":
             plat = detect_platform_from_url(url_val) if url_val else ""
@@ -199,11 +231,11 @@ def _render_import_ui(raw_df: pd.DataFrame):
             "metadata": json.dumps(meta_dict) if meta_dict else "{}",
         })
 
-    st.subheader(f"Preview — first {len(preview)} of {len(raw_df)} rows")
+    st.subheader(f"Preview — first {len(preview)} of {len(filtered_df)} rows")
     st.dataframe(pd.DataFrame(preview), use_container_width=True)
 
-    if st.button(f"Import {len(raw_df)} rows into {team}", type="primary"):
-        _do_import(raw_df, mapping, platform_override, col_hint_platform, meta_mapping,
+    if st.button(f"Import {len(filtered_df)} rows into {team}", type="primary"):
+        _do_import(filtered_df, mapping, platform_override, col_hint_platform, meta_mapping,
                    manual_values, target_table)
 
 
