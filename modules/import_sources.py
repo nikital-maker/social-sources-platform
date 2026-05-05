@@ -5,17 +5,9 @@ import uuid
 import pandas as pd
 import streamlit as st
 
-from app import (
-    PLATFORMS,
-    RELEVANCY_OPTIONS,
-    current_user,
-    detect_platform_from_column_name,
-    detect_platform_from_url,
-    get_selected_team,
-    get_sources_table,
-    load_sources,
-    run_statement,
-)
+def _app():
+    import app as _a
+    return _a
 
 _IMPORT_BATCH_SIZE = 500
 
@@ -79,6 +71,13 @@ def _safe_val(row, col):
 # ---------------------------------------------------------------------------
 
 def _render_import_ui(raw_df: pd.DataFrame):
+    a = _app()
+    PLATFORMS = a.PLATFORMS
+    RELEVANCY_OPTIONS = a.RELEVANCY_OPTIONS
+    detect_platform_from_column_name = a.detect_platform_from_column_name
+    detect_platform_from_url = a.detect_platform_from_url
+    get_selected_team = a.get_selected_team
+    get_sources_table = a.get_sources_table
     team = get_selected_team()
     target_table = get_sources_table()
     st.info(f"Importing into **{team}** table (`{target_table}`)")
@@ -210,11 +209,15 @@ def _render_import_ui(raw_df: pd.DataFrame):
 
 def _do_import(raw_df, mapping, platform_override, col_hint_platform,
                meta_mapping=None, manual_values=None, target_table=None):
+    a = _app()
+    detect_platform_from_url = a.detect_platform_from_url
+    run_statement = a.run_statement
+    load_sources = a.load_sources
     meta_mapping = meta_mapping or {}
     manual_values = manual_values or {}
     if target_table is None:
-        target_table = get_sources_table()
-    user = current_user().replace("'", "\\'")
+        target_table = a.get_sources_table()
+    user = a.current_user().replace("'", "\\'")
 
     # Build SQL SELECT fragments for each valid row up-front
     row_selects = []
