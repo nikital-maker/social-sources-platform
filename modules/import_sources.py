@@ -335,7 +335,9 @@ def page_import_sources():
                 _render_import_ui(raw_df)
 
     with tab_gsheet:
-        from app import _get_gsheets_client, _parse_gsheet_url
+        a = _app()
+        _get_gsheets_client = a._get_gsheets_client
+        _parse_gsheet_url = a._parse_gsheet_url
 
         st.caption(
             "Enter a Google Sheets URL. The sheet must be shared with the service account. "
