@@ -377,7 +377,7 @@ def page_sources_browser():
 
 
 def page_import_sources():
-    from pages._import_sources import page_import_sources as _impl
+    from modules.import_sources import page_import_sources as _impl
     _impl()
 
 
