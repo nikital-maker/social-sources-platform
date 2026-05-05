@@ -88,7 +88,8 @@ def _render_row_filters(raw_df: pd.DataFrame) -> pd.DataFrame:
             selected = st.multiselect(
                 f"Keep rows where **{col}** is:",
                 options=unique_vals,
-                default=unique_vals,
+                default=[],
+                placeholder="All values (select to restrict)",
                 key=f"row_filter_{col}",
             )
             if selected:
