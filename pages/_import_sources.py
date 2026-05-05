@@ -125,39 +125,21 @@ def _render_import_ui(raw_df: pd.DataFrame):
     if col_hint_platform and platform_override == "Auto-detect from URL":
         st.caption(f"Column name suggests platform: **{col_hint_platform}**")
 
-    # Manual overrides for fields not mapped to a column
-    # team always defaults to the selected team if not in spreadsheet
+    # Manual values — always shown; used as fallback when a row's mapped column is empty
     manual_values = {"team": team}
-    manual_fields = [f for f in ["abuse_area", "sub_abuse_area", "notes", "relevancy"] if not mapping[f]]
-    # also show team override if the spreadsheet has a team column but user may want to override
-    show_team_override = not mapping["team"]
-
-    if show_team_override or manual_fields:
-        st.subheader("Manual Values")
-        st.caption("These values apply to every imported row where the column was not found in the spreadsheet.")
-        m_left, m_right = st.columns(2)
-        with m_left:
-            if show_team_override:
-                manual_values["team"] = st.text_input(
-                    "Team (manual)", value=team, key="manual_team"
-                )
-            for field in [f for f in ["abuse_area", "notes"] if f in manual_fields]:
-                manual_values[field] = st.text_input(
-                    _IMPORT_FIELD_LABELS[field].rstrip(" *") + " (manual)",
-                    key=f"manual_{field}",
-                )
-        with m_right:
-            for field in [f for f in ["sub_abuse_area"] if f in manual_fields]:
-                manual_values[field] = st.text_input(
-                    _IMPORT_FIELD_LABELS[field].rstrip(" *") + " (manual)",
-                    key=f"manual_{field}",
-                )
-            if "relevancy" in manual_fields:
-                manual_values["relevancy"] = st.selectbox(
-                    "Relevancy (manual)",
-                    [""] + RELEVANCY_OPTIONS,
-                    key="manual_relevancy",
-                )
+    st.subheader("Manual Values")
+    st.caption("These values apply to every imported row where the column was not found (or is empty) in the spreadsheet.")
+    m_left, m_right = st.columns(2)
+    with m_left:
+        manual_values["team"] = st.text_input("Team (manual)", value=team, key="manual_team")
+        manual_values["abuse_area"] = st.text_input("Abuse Area (manual)", key="manual_abuse_area")
+    with m_right:
+        manual_values["sub_abuse_area"] = st.text_input("Sub Abuse Area (manual)", key="manual_sub_abuse_area")
+        manual_values["relevancy"] = st.selectbox(
+            "Relevancy (manual)", [""] + RELEVANCY_OPTIONS, key="manual_relevancy"
+        )
+    if not mapping.get("notes"):
+        manual_values["notes"] = st.text_input("Notes (manual)", key="manual_notes")
 
     # Metadata field mapping
     st.subheader("Metadata Fields")
