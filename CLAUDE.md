@@ -22,6 +22,50 @@ databricks apps open social-sources-platform
 
 Copy `.env.example` → `.env` and fill in `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `DATABRICKS_WAREHOUSE_ID` before running locally.
 
+## Testing UI Changes
+
+Always test UI changes locally with Playwright before pushing and redeploying. Playwright (`playwright` pip package, chromium browser) is already installed.
+
+```bash
+# 1. Start the app in the background
+streamlit run app.py --server.headless true --server.port 8502 &
+sleep 5
+
+# 2. Run a Playwright smoke test (inline or as a script)
+python3 << 'EOF'
+from playwright.sync_api import sync_playwright
+import time
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page()
+    page.goto("http://localhost:8502", wait_until="networkidle", timeout=15000)
+    time.sleep(3)
+
+    # Navigate to a page via the sidebar selectbox
+    page.locator("[data-baseweb='select']").nth(1).click()  # Navigate selectbox
+    time.sleep(1)
+    page.locator("li", has_text="Import Sources").click()
+    time.sleep(4)
+
+    errors = page.locator(".stException").all()
+    print("ERRORS:" if errors else "OK - no errors")
+    for e in errors:
+        print(e.inner_text()[:400])
+
+    browser.close()
+EOF
+
+# 3. Stop the local server
+kill $(lsof -ti:8502)
+```
+
+**Playwright tips for this app:**
+- Streamlit selectboxes use `[data-baseweb='select']`, not native `<select>`. Click the box first, then click a `li` option.
+- Sidebar selectboxes in order: 0 = Team, 1 = Navigate.
+- Error banner selector: `.stException`
+- Spurious Streamlit page-nav links (from `pages/` auto-discovery): `[data-testid='stSidebarNavLink']` — should always be 0.
+
 ## Architecture
 
 ```
@@ -43,9 +87,13 @@ Databricks scraper Jobs (named scraper_*)          Manual import / sidebar form
 
 **`social_sources_staging`** — raw scraper feed. Same schema plus `scraper_name` and `raw_record` (raw JSON). Rows flow out via Approve (MERGE INTO social_sources + DELETE from staging) or `dedup_job.py`.
 
-### `app.py` — Single-file Streamlit app
+### `app.py` — Main Streamlit entry point
 
-All pages live in one file. Navigation is a sidebar `selectbox` driving a `PAGES` dict of page functions. The sidebar also renders the "Add New Source" form on every page.
+Page functions are defined in `app.py`. Navigation is a sidebar `selectbox` driving a `PAGES` dict of page functions. The sidebar also renders the "Add New Source" form on every page.
+
+**Important:** The Streamlit entry-point block (`st.set_page_config`, sidebar widgets, `PAGES[selected_page]()`) is guarded with `if __name__ == "__main__":`. This prevents those calls from executing when `app.py` is imported as a module by `modules/import_sources.py`, which would trigger a second `set_page_config` and crash.
+
+**Do not put pages in the `pages/` directory.** Streamlit auto-discovers files there and adds them as top-level navigation tabs, creating a duplicate nav. Page-specific logic that needs to import from `app.py` should live in `modules/` instead, using lazy imports (inside functions) to avoid the circular-import / double-`set_page_config` problem.
 
 **Connection layer** — uses `databricks-sql-connector` (not Spark/DatabricksSession):
 - `_db_conn_params()` — builds connection dict from env vars (`DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `DATABRICKS_WAREHOUSE_ID`).
@@ -56,10 +104,14 @@ All pages live in one file. Navigation is a sidebar `selectbox` driving a `PAGES
 
 **Pages:**
 - `page_sources_browser` — reads `social_sources`, filters by platform/team/abuse_area/sub_abuse_area/relevancy/keyword, export to CSV.
-- `page_import_sources` — three tabs: Upload CSV, Paste Spreadsheet, Google Sheets Link. Auto-maps columns, detects platform from URL, previews first 5 rows, then bulk-MERGEs via `_do_import`.
+- `page_import_sources` — thin wrapper that delegates to `modules/import_sources.py`. Three tabs: Upload CSV, Paste Spreadsheet, Google Sheets Link. Auto-maps columns, detects platform from URL, previews first 5 rows, then bulk-MERGEs via `_do_import`.
 - `page_pending_review` — LEFT ANTI JOIN staging vs sources to show only truly new rows; Approve runs MERGE INTO + DELETE from staging; Reject just deletes from staging.
 - `page_run_scrapers` — lists Databricks Jobs whose name starts with `scraper_` via `WorkspaceClient`, shows last run status/time, triggers `jobs.run_now()`.
 - `page_dashboard` — KPI metrics (total, added this week, platform count) + bar charts by platform and relevancy + daily line chart for last 30 days.
+
+### `modules/import_sources.py`
+
+Contains all Import Sources page logic (`_render_import_ui`, `_do_import`, `page_import_sources`). Kept in `modules/` (not `pages/`) to avoid Streamlit auto-discovery. All imports from `app` are lazy — done inside functions via `_app()` helper — to avoid the circular import that would trigger `set_page_config` twice.
 
 **`sidebar_add_source()`** — always rendered; inserts directly into `social_sources` with a generated UUID. Supports auto-detect platform from URL.
 
