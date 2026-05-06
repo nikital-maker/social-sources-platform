@@ -30,6 +30,13 @@ async def list_filter_options(team: str = Depends(validate_team)):
     return get_filter_options(table)
 
 
+def _split_csv(val: str | None) -> list[str] | None:
+    if not val:
+        return None
+    parts = [v.strip() for v in val.split(",") if v.strip()]
+    return parts or None
+
+
 @router.get("", response_model=SourcesPage)
 async def list_sources(
     team: str = Depends(validate_team),
@@ -43,7 +50,10 @@ async def list_sources(
     offset: int = 0,
 ):
     table = get_sources_table(team)
-    where = build_filter_where(platform, keyword, abuse_area, sub_abuse_area, relevancy, added_by)
+    where = build_filter_where(
+        _split_csv(platform), keyword, _split_csv(abuse_area),
+        _split_csv(sub_abuse_area), _split_csv(relevancy), _split_csv(added_by),
+    )
     total = count_sources_filtered(table, where)
     df = load_sources_page(table, where, min(limit, PAGE_SIZE_MAX), offset)
     items = df.where(df.notna(), None).to_dict(orient="records") if not df.empty else []
@@ -120,7 +130,10 @@ async def export_sources(
     added_by: str | None = None,
 ):
     table = get_sources_table(team)
-    where = build_filter_where(platform, keyword, abuse_area, sub_abuse_area, relevancy, added_by)
+    where = build_filter_where(
+        _split_csv(platform), keyword, _split_csv(abuse_area),
+        _split_csv(sub_abuse_area), _split_csv(relevancy), _split_csv(added_by),
+    )
     # Export pulls all matching rows (no pagination)
     from backend.services.sources import run_query
     df = run_query(f"SELECT * FROM {table} WHERE {where} ORDER BY added_at DESC")

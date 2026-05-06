@@ -42,7 +42,15 @@ def build_filter_where(
         conditions.append(_in_clause("platform", platform))
     if keyword:
         k = _esc(keyword)
-        conditions.append(f"(url LIKE '%{k}%' OR COALESCE(notes, '') LIKE '%{k}%')")
+        conditions.append(
+            f"(url LIKE '%{k}%' OR COALESCE(notes, '') LIKE '%{k}%'"
+            f" OR COALESCE(platform, '') LIKE '%{k}%'"
+            f" OR COALESCE(abuse_area, '') LIKE '%{k}%'"
+            f" OR COALESCE(sub_abuse_area, '') LIKE '%{k}%'"
+            f" OR COALESCE(relevancy, '') LIKE '%{k}%'"
+            f" OR COALESCE(added_by, '') LIKE '%{k}%'"
+            f" OR COALESCE(metadata, '') LIKE '%{k}%')"
+        )
     if abuse_area:
         conditions.append(_in_clause("abuse_area", abuse_area))
     if sub_abuse_area:

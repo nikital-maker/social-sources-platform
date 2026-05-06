@@ -5,7 +5,7 @@ import { deleteSources, exportSourcesUrl, getFilterOptions, listSources, wipeAll
 import { ErrorBanner } from '../components/shared/ErrorBanner'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
-import { Input, Select } from '../components/ui/Input'
+import { Input } from '../components/ui/Input'
 import { LoadingState } from '../components/ui/Spinner'
 import { useTeamContext } from '../contexts/TeamContext'
 
@@ -90,38 +90,48 @@ export function SourcesBrowser() {
       {/* Filters */}
       <div className="filters-bar">
         <div style={{ minWidth: 150 }}>
-          <Select label="Platform" value={filters.platform ?? ''} onChange={(e) => setFilter('platform', e.target.value)}>
-            <option value="">All platforms</option>
-            {filterOptions?.platforms.map((p) => <option key={p} value={p}>{p}</option>)}
-          </Select>
+          <MultiSelect
+            label="Platform"
+            options={filterOptions?.platforms ?? []}
+            value={filters.platform}
+            onChange={(v) => setFilter('platform', v)}
+          />
         </div>
         <div style={{ minWidth: 160 }}>
-          <Select label="Abuse Area" value={filters.abuse_area ?? ''} onChange={(e) => setFilter('abuse_area', e.target.value)}>
-            <option value="">All areas</option>
-            {filterOptions?.abuse_areas.map((a) => <option key={a} value={a}>{a}</option>)}
-          </Select>
+          <MultiSelect
+            label="Abuse Area"
+            options={filterOptions?.abuse_areas ?? []}
+            value={filters.abuse_area}
+            onChange={(v) => setFilter('abuse_area', v)}
+          />
         </div>
         <div style={{ minWidth: 160 }}>
-          <Select label="Sub Abuse Area" value={filters.sub_abuse_area ?? ''} onChange={(e) => setFilter('sub_abuse_area', e.target.value)}>
-            <option value="">All sub-areas</option>
-            {filterOptions?.sub_abuse_areas.map((s) => <option key={s} value={s}>{s}</option>)}
-          </Select>
+          <MultiSelect
+            label="Sub Abuse Area"
+            options={filterOptions?.sub_abuse_areas ?? []}
+            value={filters.sub_abuse_area}
+            onChange={(v) => setFilter('sub_abuse_area', v)}
+          />
         </div>
         <div style={{ minWidth: 140 }}>
-          <Select label="Relevancy" value={filters.relevancy ?? ''} onChange={(e) => setFilter('relevancy', e.target.value)}>
-            <option value="">All relevancy</option>
-            {filterOptions?.relevancies.map((r) => <option key={r} value={r}>{r}</option>)}
-          </Select>
+          <MultiSelect
+            label="Relevancy"
+            options={filterOptions?.relevancies ?? []}
+            value={filters.relevancy}
+            onChange={(v) => setFilter('relevancy', v)}
+          />
         </div>
         <div style={{ minWidth: 150 }}>
-          <Select label="Added By" value={filters.added_by ?? ''} onChange={(e) => setFilter('added_by', e.target.value)}>
-            <option value="">Anyone</option>
-            {filterOptions?.added_by.map((u) => <option key={u} value={u}>{u}</option>)}
-          </Select>
+          <MultiSelect
+            label="Added By"
+            options={filterOptions?.added_by ?? []}
+            value={filters.added_by}
+            onChange={(v) => setFilter('added_by', v)}
+          />
         </div>
         <div style={{ minWidth: 200, flex: 1 }}>
           <Input
-            label="Search URL / Notes"
+            label="Search"
             value={filters.keyword ?? ''}
             onChange={(e) => setFilter('keyword', e.target.value)}
             placeholder="keyword…"
@@ -243,8 +253,8 @@ export function SourcesBrowser() {
                     <td>
                       {s.platform ? <Badge variant="info" size="sm">{s.platform}</Badge> : <span className="text-dim">—</span>}
                     </td>
-                    <td className="text-sm">{s.abuse_area || <span className="text-dim">—</span>}</td>
-                    <td className="text-sm">{s.sub_abuse_area || <span className="text-dim">—</span>}</td>
+                    <td className="text-sm">{s.abuse_area ? <CommaBadges value={s.abuse_area} /> : <span className="text-dim">—</span>}</td>
+                    <td className="text-sm">{s.sub_abuse_area ? <CommaBadges value={s.sub_abuse_area} /> : <span className="text-dim">—</span>}</td>
                     <td>
                       {s.relevancy ? <RelevancyBadge value={s.relevancy} /> : <span className="text-dim">—</span>}
                     </td>
@@ -268,6 +278,151 @@ export function SourcesBrowser() {
             </div>
           )}
         </>
+      )}
+    </div>
+  )
+}
+
+function CommaBadges({ value }: { value: string }) {
+  const parts = value.split(',').map((v) => v.trim()).filter(Boolean)
+  if (parts.length <= 1) return <>{value}</>
+  return (
+    <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+      {parts.map((p, i) => (
+        <Badge key={i} variant="neutral" size="sm">{p}</Badge>
+      ))}
+    </span>
+  )
+}
+
+function MultiSelect({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: string[]
+  value: string | undefined
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const selected = value ? value.split(',').map((v) => v.trim()).filter(Boolean) : []
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  function toggle(opt: string) {
+    const next = selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]
+    onChange(next.join(','))
+  }
+
+  function remove(opt: string) {
+    onChange(selected.filter((s) => s !== opt).join(','))
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--t3)', marginBottom: 4 }}>{label}</label>
+      <div
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 4,
+          alignItems: 'center',
+          minHeight: 36,
+          padding: '4px 8px',
+          background: 'var(--surface-3)',
+          border: '1px solid var(--border-2)',
+          borderRadius: 'var(--r-md)',
+          cursor: 'pointer',
+          fontSize: 13,
+        }}
+      >
+        {selected.length === 0 && <span style={{ color: 'var(--t3)' }}>All</span>}
+        {selected.map((s) => (
+          <span
+            key={s}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '1px 6px',
+              borderRadius: 'var(--r-sm)',
+              background: 'var(--accent-dim)',
+              border: '1px solid var(--accent-border)',
+              color: 'var(--t-accent)',
+              fontSize: 12,
+              lineHeight: '18px',
+            }}
+          >
+            {s}
+            <span
+              onClick={(e) => { e.stopPropagation(); remove(s) }}
+              style={{ cursor: 'pointer', fontSize: 14, lineHeight: 1, opacity: 0.7 }}
+            >
+              ×
+            </span>
+          </span>
+        ))}
+      </div>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            zIndex: 50,
+            marginTop: 4,
+            maxHeight: 240,
+            overflowY: 'auto',
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border-2)',
+            borderRadius: 'var(--r-md)',
+            boxShadow: '0 8px 24px rgba(0,0,0,.25)',
+            padding: 4,
+          }}
+        >
+          {options.map((opt) => {
+            const checked = selected.includes(opt)
+            return (
+              <label
+                key={opt}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 8px',
+                  borderRadius: 'var(--r-sm)',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  color: checked ? 'var(--t-accent)' : 'var(--t2)',
+                  background: checked ? 'var(--accent-dim)' : 'transparent',
+                }}
+                onMouseEnter={(e) => { if (!checked) (e.currentTarget.style.background = 'var(--surface-2)') }}
+                onMouseLeave={(e) => { if (!checked) (e.currentTarget.style.background = 'transparent') }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(opt)}
+                  style={{ accentColor: 'var(--t-accent)' }}
+                />
+                {opt}
+              </label>
+            )
+          })}
+          {options.length === 0 && <div style={{ padding: '8px', color: 'var(--t3)', fontSize: 13 }}>No options</div>}
+        </div>
       )}
     </div>
   )
