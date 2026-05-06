@@ -452,6 +452,7 @@ function CsvTab({ team, platforms, relevancyOptions }: { team: string; platforms
       platformOverride,
       manualValues,
       metaMapping,
+      rowFilters,
     }: {
       mapping: ColumnMapping
       platformOverride: string
@@ -542,6 +543,7 @@ function PasteTab({ team, platforms, relevancyOptions }: { team: string; platfor
       platformOverride,
       manualValues,
       metaMapping,
+      rowFilters,
     }: {
       mapping: ColumnMapping
       platformOverride: string
