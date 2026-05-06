@@ -23,8 +23,6 @@ function formatInterval(m: number): string {
   return `${m} min`
 }
 
-interface SheetTab { id: number; title: string }
-
 interface ColumnMapping {
   url?: string
   team?: string
