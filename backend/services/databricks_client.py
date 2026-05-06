@@ -62,6 +62,11 @@ def run_statement(statement: str) -> None:
 
 def current_user() -> str:
     try:
-        return get_workspace_client().current_user.me().user_name or "unknown"
+        me = get_workspace_client().current_user.me()
+        if me.user_name and "@" in me.user_name:
+            return me.user_name
+        if me.display_name:
+            return me.display_name
+        return me.user_name or "unknown"
     except Exception:
         return "local_dev"

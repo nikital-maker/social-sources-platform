@@ -265,7 +265,7 @@ export function SourcesBrowser() {
                       ) : <span className="text-dim">—</span>}
                     </td>
                     <td className="cell-mono text-xs text-dim">{s.added_at?.slice(0, 10)}</td>
-                    <td className="text-sm text-muted">{s.added_by}</td>
+                    <td className="text-sm text-muted">{formatAddedBy(s.added_by)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -281,6 +281,13 @@ export function SourcesBrowser() {
       )}
     </div>
   )
+}
+
+function formatAddedBy(val?: string): string {
+  if (!val) return '—'
+  if (/^\d+@\d+$/.test(val)) return 'auto-sync'
+  if (val.includes('@')) return val.split('@')[0]
+  return val
 }
 
 function CommaBadges({ value }: { value: string }) {
