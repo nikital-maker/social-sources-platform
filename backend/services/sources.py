@@ -15,6 +15,14 @@ def _esc(v: str) -> str:
     return str(v).replace("'", "\\'")
 
 
+def _like_any(col: str, values: list[str]) -> str:
+    """Match rows where a comma-separated column contains any of the given values."""
+    parts = [f"{col} LIKE '%{_esc(v)}%'" for v in values if v]
+    if not parts:
+        return "TRUE"
+    return f"({' OR '.join(parts)})"
+
+
 def _in_clause(col: str, values: list[str]) -> str:
     """Return `col = 'x'` or `col IN ('x','y',...)` for the given values list."""
     escaped = [f"'{_esc(v)}'" for v in values if v]
@@ -52,9 +60,9 @@ def build_filter_where(
             f" OR COALESCE(metadata, '') LIKE '%{k}%')"
         )
     if abuse_area:
-        conditions.append(_in_clause("abuse_area", abuse_area))
+        conditions.append(_like_any("abuse_area", abuse_area))
     if sub_abuse_area:
-        conditions.append(_in_clause("sub_abuse_area", sub_abuse_area))
+        conditions.append(_like_any("sub_abuse_area", sub_abuse_area))
     if relevancy:
         conditions.append(_in_clause("relevancy", relevancy))
     if added_by:
@@ -82,10 +90,24 @@ def get_filter_options(table: str) -> dict:
         )
         return df[col].tolist() if not df.empty else []
 
+    def distinct_split(col: str) -> list[str]:
+        """Like distinct() but splits comma-separated values and deduplicates."""
+        raw = distinct(col)
+        seen: set[str] = set()
+        result: list[str] = []
+        for val in raw:
+            for part in val.split(","):
+                part = part.strip()
+                if part and part not in seen:
+                    seen.add(part)
+                    result.append(part)
+        result.sort()
+        return result
+
     return {
         "platforms":       distinct("platform"),
-        "abuse_areas":     distinct("abuse_area"),
-        "sub_abuse_areas": distinct("sub_abuse_area"),
+        "abuse_areas":     distinct_split("abuse_area"),
+        "sub_abuse_areas": distinct_split("sub_abuse_area"),
         "relevancies":     distinct("relevancy"),
         "added_by":        distinct("added_by"),
     }
