@@ -143,7 +143,7 @@ export function SourcesBrowser() {
               Clear
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => { qc.invalidateQueries({ queryKey: ['sources', team] }); qc.invalidateQueries({ queryKey: ['filter-options', team] }) }}>
+          <Button variant="ghost" size="sm" onClick={() => { qc.refetchQueries({ queryKey: ['sources', team] }); qc.refetchQueries({ queryKey: ['filter-options', team] }) }}>
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M1 8a7 7 0 0 1 13-3.5M15 8a7 7 0 0 1-13 3.5"/><path d="M14 1v4h-4M2 15v-4h4"/>
             </svg>
