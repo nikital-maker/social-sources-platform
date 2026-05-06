@@ -130,6 +130,15 @@ def execute_import(
                 MERGE INTO {target_table} AS t
                 USING ({union_sql}) AS src
                 ON t.url = src.url
+                WHEN MATCHED THEN UPDATE SET
+                    platform = src.platform,
+                    team = CASE WHEN src.team != '' THEN src.team ELSE t.team END,
+                    abuse_area = CASE WHEN src.abuse_area != '' THEN src.abuse_area ELSE t.abuse_area END,
+                    sub_abuse_area = CASE WHEN src.sub_abuse_area != '' THEN src.sub_abuse_area ELSE t.sub_abuse_area END,
+                    notes = CASE WHEN src.notes != '' THEN src.notes ELSE t.notes END,
+                    relevancy = CASE WHEN src.relevancy != '' THEN src.relevancy ELSE t.relevancy END,
+                    metadata = CASE WHEN src.metadata != '{{}}' THEN src.metadata ELSE t.metadata END,
+                    added_by = src.added_by
                 WHEN NOT MATCHED THEN INSERT *
             """)
         except Exception as e:

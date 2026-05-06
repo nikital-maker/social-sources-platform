@@ -46,6 +46,15 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/debug/headers")
+async def debug_headers(request: Request):
+    from backend.services.databricks_client import current_user
+    return {
+        "headers": dict(request.headers),
+        "current_user_fallback": current_user(),
+    }
+
+
 @app.get("/api/config")
 async def get_config():
     from backend.config import PLATFORMS, RELEVANCY_OPTIONS, TEAMS, WORKFLOW_CONFIG

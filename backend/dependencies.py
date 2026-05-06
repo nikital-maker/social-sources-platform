@@ -5,10 +5,15 @@ from backend.services.databricks_client import current_user, get_workspace_clien
 
 
 async def get_current_user(request: Request) -> str:
-    # Databricks Apps injects the authenticated user via a header
-    user = request.headers.get("X-Databricks-User") or request.headers.get("X-Forwarded-User")
-    if user:
-        return user
+    for header in (
+        "X-Forwarded-Email",
+        "X-Forwarded-Preferred-Username",
+        "X-Databricks-User",
+        "X-Forwarded-User",
+    ):
+        val = request.headers.get(header)
+        if val and "@" in val:
+            return val
     return current_user()
 
 
