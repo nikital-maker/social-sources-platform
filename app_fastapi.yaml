@@ -1,0 +1,7 @@
+command:
+  - bash
+  - startup.sh
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: "2ee693873054f90d"

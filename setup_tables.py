@@ -72,6 +72,31 @@ _STAGING_DDL = f"""
     COMMENT 'Raw staging feed from scraper jobs, pending review/dedup'
 """
 
+_SYNC_CONFIG_DDL = f"""
+    CREATE TABLE IF NOT EXISTS {_SCHEMA}.gsheet_sync_config{_TABLE_SUFFIX} (
+        id                    STRING    NOT NULL COMMENT 'UUID primary key',
+        spreadsheet_id        STRING    NOT NULL COMMENT 'Google Sheets spreadsheet ID',
+        spreadsheet_url       STRING    NOT NULL COMMENT 'Full Google Sheets URL',
+        spreadsheet_name      STRING    NOT NULL COMMENT 'Human-readable sheet name',
+        tab_title             STRING    NOT NULL COMMENT 'Worksheet tab name',
+        gid                   INT       NOT NULL COMMENT 'Worksheet GID',
+        team                  STRING    NOT NULL COMMENT 'Target team name',
+        mapping_json          STRING    COMMENT 'JSON column mapping config',
+        platform_override     STRING    DEFAULT 'Auto-detect from URL',
+        manual_values_json    STRING    COMMENT 'JSON manual value overrides',
+        meta_mapping_json     STRING    COMMENT 'JSON metadata column mapping',
+        sync_enabled          BOOLEAN   DEFAULT true,
+        sync_interval_minutes INT       DEFAULT 30,
+        last_sync_at          TIMESTAMP,
+        last_sync_rows        INT,
+        last_sync_error       STRING,
+        created_at            TIMESTAMP NOT NULL,
+        created_by            STRING
+    )
+    USING DELTA
+    COMMENT 'Google Sheets auto-sync configuration'
+"""
+
 STATEMENTS = []
 
 # Drop and recreate team tables
@@ -85,6 +110,11 @@ staging_table = f"{_SCHEMA}.social_sources_staging{_TABLE_SUFFIX}"
 STATEMENTS.append(f"DROP TABLE IF EXISTS {staging_table}")
 STATEMENTS.append(_STAGING_DDL)
 
+# Sync config table
+sync_config_table = f"{_SCHEMA}.gsheet_sync_config{_TABLE_SUFFIX}"
+STATEMENTS.append(f"DROP TABLE IF EXISTS {sync_config_table}")
+STATEMENTS.append(_SYNC_CONFIG_DDL)
+
 with sql.connect(server_hostname=host, http_path=http_path, access_token=token) as conn:
     with conn.cursor() as cursor:
         for stmt in STATEMENTS:
@@ -95,3 +125,4 @@ print(f"Tables created{suffix_note}:")
 for team, table_name in TEAM_TABLES.items():
     print(f"  {_SCHEMA}.{table_name}  ({team})")
 print(f"  {staging_table}")
+print(f"  {sync_config_table}")
