@@ -2,7 +2,7 @@
 set -e
 
 echo "Installing Python dependencies..."
-pip install -q -r requirements.txt
+python3 -m pip install -q -r requirements.txt
 
 if [ ! -d "frontend/dist" ]; then
     echo "Building frontend..."
