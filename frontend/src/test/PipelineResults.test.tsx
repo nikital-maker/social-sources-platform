@@ -17,6 +17,7 @@ function makeRun(overrides: Partial<PipelineRun> = {}): PipelineRun {
     status: 'completed',
     databricks_run_id: 12345,
     row_count: 42,
+    error_log: null,
     created_at: '2026-05-12T10:00:00Z',
     created_by: 'nikital@activefence.com',
     completed_at: '2026-05-12T10:05:00Z',

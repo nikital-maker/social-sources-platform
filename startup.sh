@@ -9,4 +9,4 @@ if [ ! -d "frontend/dist" ]; then
     cd frontend && npm ci && npm run build && cd ..
 fi
 
-exec python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
+exec python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
