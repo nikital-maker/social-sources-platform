@@ -27,6 +27,14 @@ class SourceCreate(BaseModel):
     auto_detect_platform: bool = True
 
 
+class SourceUpdate(BaseModel):
+    platform: str = ""
+    abuse_area: str = ""
+    sub_abuse_area: str = ""
+    notes: str = ""
+    relevancy: str = ""
+
+
 class SourcesPage(BaseModel):
     items: list[Source]
     total: int

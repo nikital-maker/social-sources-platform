@@ -11,7 +11,8 @@ import { Dashboard } from './pages/Dashboard'
 import { Diagnostics } from './pages/Diagnostics'
 import { ImportSources } from './pages/ImportSources'
 import { PendingReview } from './pages/PendingReview'
-import { RunScrapers } from './pages/RunScrapers'
+import { Pipelines } from './pages/Pipelines'
+import { PipelineRunHistory } from './pages/PipelineRunHistory'
 import { ConnectedSheets } from './pages/ConnectedSheets'
 import { SourcesBrowser } from './pages/SourcesBrowser'
 import { TelegramWorkflow } from './pages/TelegramWorkflow'
@@ -56,7 +57,8 @@ function AppRoutes() {
             <Route path="/:team/telegram" element={<TelegramWorkflow />} />
             <Route path="/:team/connected-sheets" element={<ConnectedSheets />} />
             <Route path="/:team/dashboard" element={<Dashboard />} />
-            <Route path="/scrapers" element={<RunScrapers />} />
+            <Route path="/:team/pipelines" element={<Pipelines />} />
+            <Route path="/:team/pipelines/runs" element={<PipelineRunHistory />} />
             <Route path="/diagnostics" element={<Diagnostics />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

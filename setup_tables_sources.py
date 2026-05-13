@@ -1,8 +1,6 @@
 """
-Run once to create (or recreate) the Unity Catalog schema and Delta tables.
-
-Usage:
-    python setup_tables.py
+Run once to create (or recreate) social sources Delta tables.
+Drops and recreates: per-team source tables, staging, gsheet_sync_config.
 
 WARNING: Drops existing tables first — do not run against production data.
 """
@@ -23,7 +21,7 @@ warehouse_id = os.environ["DATABRICKS_WAREHOUSE_ID"]
 http_path = f"/sql/1.0/warehouses/{warehouse_id}"
 
 _SCHEMA = "af_delivery_dev.data_collection"
-_TABLE_SUFFIX = os.environ.get("TABLE_SUFFIX", "")  # e.g. "_dev" locally, "" on platform
+_TABLE_SUFFIX = os.environ.get("TABLE_SUFFIX", "")
 
 TEAM_TABLES = {
     "Child Safety":       f"social_sources_child_safety{_TABLE_SUFFIX}",
@@ -97,64 +95,20 @@ _SYNC_CONFIG_DDL = f"""
     COMMENT 'Google Sheets auto-sync configuration'
 """
 
-_PIPELINE_RUNS_DDL = f"""
-    CREATE TABLE IF NOT EXISTS {_SCHEMA}.pipeline_runs{_TABLE_SUFFIX} (
-        id                  STRING    NOT NULL COMMENT 'UUID primary key',
-        team                STRING    NOT NULL COMMENT 'Team name',
-        pipeline_type       STRING    NOT NULL COMMENT 'e.g. google_dorking',
-        config_json         STRING    COMMENT 'JSON snapshot of input parameters',
-        status              STRING    NOT NULL COMMENT 'pending | running | completed | failed',
-        databricks_run_id   BIGINT    COMMENT 'Databricks job run ID',
-        row_count           INT       COMMENT 'Number of results written',
-        error_log           STRING    COMMENT 'Error message or traceback if status=failed',
-        created_at          TIMESTAMP NOT NULL,
-        created_by          STRING,
-        completed_at        TIMESTAMP
-    )
-    USING DELTA
-    COMMENT 'Pipeline execution history'
-"""
-
-_PIPELINE_RESULTS_GOOGLE_DORKING_DDL = f"""
-    CREATE TABLE IF NOT EXISTS {_SCHEMA}.pipeline_results_google_dorking{_TABLE_SUFFIX} (
-        id                  STRING    NOT NULL COMMENT 'UUID primary key',
-        pipeline_run_id     STRING    NOT NULL COMMENT 'FK to pipeline_runs.id',
-        team                STRING    NOT NULL,
-        query               STRING    COMMENT 'The formatted query that returned this result',
-        href                STRING    COMMENT 'Result URL',
-        title               STRING    COMMENT 'Page title',
-        body                STRING    COMMENT 'Result snippet / body text',
-        created_at          TIMESTAMP NOT NULL
-    )
-    USING DELTA
-    COMMENT 'Google Dorking pipeline results'
-"""
-
 STATEMENTS = []
 
-# Drop and recreate team tables
 for team, table_name in TEAM_TABLES.items():
     full_table = f"{_SCHEMA}.{table_name}"
     STATEMENTS.append(f"DROP TABLE IF EXISTS {full_table}")
     STATEMENTS.append(_SOURCES_DDL.format(table=full_table, team=team))
 
-# Staging table
 staging_table = f"{_SCHEMA}.social_sources_staging{_TABLE_SUFFIX}"
 STATEMENTS.append(f"DROP TABLE IF EXISTS {staging_table}")
 STATEMENTS.append(_STAGING_DDL)
 
-# Sync config table
 sync_config_table = f"{_SCHEMA}.gsheet_sync_config{_TABLE_SUFFIX}"
 STATEMENTS.append(f"DROP TABLE IF EXISTS {sync_config_table}")
 STATEMENTS.append(_SYNC_CONFIG_DDL)
-
-pipeline_runs_table = f"{_SCHEMA}.pipeline_runs{_TABLE_SUFFIX}"
-STATEMENTS.append(f"DROP TABLE IF EXISTS {pipeline_runs_table}")
-STATEMENTS.append(_PIPELINE_RUNS_DDL)
-
-pipeline_results_gd_table = f"{_SCHEMA}.pipeline_results_google_dorking{_TABLE_SUFFIX}"
-STATEMENTS.append(f"DROP TABLE IF EXISTS {pipeline_results_gd_table}")
-STATEMENTS.append(_PIPELINE_RESULTS_GOOGLE_DORKING_DDL)
 
 with sql.connect(server_hostname=host, http_path=http_path, access_token=token) as conn:
     with conn.cursor() as cursor:
@@ -162,10 +116,8 @@ with sql.connect(server_hostname=host, http_path=http_path, access_token=token) 
             cursor.execute(stmt)
 
 suffix_note = f" (suffix: {_TABLE_SUFFIX!r})" if _TABLE_SUFFIX else ""
-print(f"Tables created{suffix_note}:")
+print(f"Sources tables created{suffix_note}:")
 for team, table_name in TEAM_TABLES.items():
     print(f"  {_SCHEMA}.{table_name}  ({team})")
 print(f"  {staging_table}")
 print(f"  {sync_config_table}")
-print(f"  {pipeline_runs_table}")
-print(f"  {pipeline_results_gd_table}")

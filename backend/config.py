@@ -9,6 +9,7 @@ except Exception:
 
 
 _TABLE_SUFFIX = os.environ.get("TABLE_SUFFIX", "")
+TABLE_SUFFIX = _TABLE_SUFFIX
 _SCHEMA = "af_delivery_dev.data_collection"
 
 TEAMS: dict[str, str] = {
@@ -22,6 +23,11 @@ TEAMS: dict[str, str] = {
 
 STAGING_TABLE = f"{_SCHEMA}.social_sources_staging{_TABLE_SUFFIX}"
 SYNC_CONFIG_TABLE = f"{_SCHEMA}.gsheet_sync_config{_TABLE_SUFFIX}"
+
+# Pipelines
+PIPELINE_RUNS_TABLE = f"{_SCHEMA}.pipeline_runs{_TABLE_SUFFIX}"
+PIPELINE_RESULTS_GOOGLE_DORKING_TABLE = f"{_SCHEMA}.pipeline_results_google_dorking{_TABLE_SUFFIX}"
+GOOGLE_DORKING_JOB_ID = int(os.environ.get("GOOGLE_DORKING_JOB_ID", 0))
 
 PLATFORMS = ["Telegram", "Twitter/X", "TikTok", "Instagram", "YouTube", "Facebook", "Other"]
 RELEVANCY_OPTIONS = ["Yes", "No", "Low", "Medium", "High", "True", "False"]
@@ -47,6 +53,7 @@ _PLATFORM_COL_KEYWORDS: dict[str, list[str]] = {
 _GOOGLE_SA_DEFAULT_PATH = (
     "/Workspace/Users/nikital@activefence.com/Upload to gsheet files/best-gsaccount-5b4811cedbed.json"
 )
+_GOOGLE_SA_CREDS_FOLDER = "/Workspace/Users/nikital@activefence.com/Upload to gsheet files"
 
 WORKFLOW_CONFIG: dict[str, dict] = {
     "TEST": {

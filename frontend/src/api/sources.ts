@@ -77,6 +77,19 @@ export async function addSource(team: string, body: SourceCreate): Promise<Sourc
   return res.data
 }
 
+export interface SourceUpdate {
+  platform?: string
+  abuse_area?: string
+  sub_abuse_area?: string
+  notes?: string
+  relevancy?: string
+}
+
+export async function updateSource(team: string, id: string, body: SourceUpdate): Promise<Source> {
+  const res = await api.patch<Source>(`/sources/${id}`, body, { params: { team } })
+  return res.data
+}
+
 export async function deleteSources(team: string, ids: string[]): Promise<{ deleted: number }> {
   const res = await api.delete<{ deleted: number }>('/sources', { data: { ids }, params: { team } })
   return res.data

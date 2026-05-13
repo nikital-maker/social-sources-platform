@@ -9,10 +9,10 @@ const NAV_TEAM = [
   { label: 'Pending Review',      path: 'review',           icon: <IconReview /> },
   { label: 'Telegram Workflow',   path: 'telegram',         icon: <IconTelegram /> },
   { label: 'Dashboard',           path: 'dashboard',        icon: <IconDashboard /> },
+  { label: 'Pipelines',           path: 'pipelines',        icon: <IconPipelines /> },
 ]
 
 const NAV_GLOBAL = [
-  { label: 'Run Scrapers',  path: '/scrapers',    icon: <IconScrapers /> },
   { label: 'Diagnostics',   path: '/diagnostics', icon: <IconDiagnostics /> },
 ]
 
@@ -142,14 +142,6 @@ function IconReview() {
   )
 }
 
-function IconScrapers() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 8h2.5L5 4l3 9 2.5-7 1.5 2H15"/>
-    </svg>
-  )
-}
-
 function IconTelegram() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -174,6 +166,16 @@ function IconDashboard() {
       <rect x="2" y="9" width="3" height="5" rx="0.5"/>
       <rect x="6.5" y="5.5" width="3" height="8.5" rx="0.5"/>
       <rect x="11" y="2" width="3" height="12" rx="0.5"/>
+    </svg>
+  )
+}
+
+function IconPipelines() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 4h3v8H2z"/>
+      <path d="M6.5 2h3v12h-3z"/>
+      <path d="M11 6h3v6h-3z"/>
     </svg>
   )
 }

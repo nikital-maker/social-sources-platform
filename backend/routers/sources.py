@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 
 from backend.config import detect_platform_from_url, get_sources_table
 from backend.dependencies import get_current_user, validate_team
-from backend.models.source import DailyCount, DashboardData, DeleteRequest, Source, SourceCreate, SourcesPage
+from backend.models.source import DailyCount, DashboardData, DeleteRequest, Source, SourceCreate, SourceUpdate, SourcesPage
 from backend.services.sources import (
     build_filter_where,
     count_sources_filtered,
@@ -15,6 +15,7 @@ from backend.services.sources import (
     insert_source,
     load_sources,
     load_sources_page,
+    update_source,
     wipe_all_sources,
 )
 
@@ -92,6 +93,29 @@ async def add_source(
     row = df[df["url"] == body.url.strip()]
     if row.empty:
         raise HTTPException(status_code=500, detail="Source was inserted but could not be retrieved")
+    return row.iloc[0].where(row.iloc[0].notna(), None).to_dict()
+
+
+@router.patch("/{source_id}", response_model=Source)
+async def update_source_endpoint(
+    source_id: str,
+    body: SourceUpdate,
+    team: str = Depends(validate_team),
+):
+    table = get_sources_table(team)
+    update_source(
+        table=table,
+        source_id=source_id,
+        platform=body.platform,
+        abuse_area=body.abuse_area,
+        sub_abuse_area=body.sub_abuse_area,
+        notes=body.notes,
+        relevancy=body.relevancy,
+    )
+    df = load_sources(table)
+    row = df[df["id"] == source_id]
+    if row.empty:
+        raise HTTPException(status_code=404, detail="Source not found after update")
     return row.iloc[0].where(row.iloc[0].notna(), None).to_dict()
 
 

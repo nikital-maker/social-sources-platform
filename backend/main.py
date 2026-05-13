@@ -7,14 +7,18 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.routers import gsheets, imports, jobs, scrapers, sources, staging, sync_configs
+from backend.routers import gsheets, imports, jobs, pipelines, scrapers, sources, staging, sync_configs
 from backend.services.sync_scheduler import start_scheduler, stop_scheduler
+from backend.services.migrations import run_migrations
+from backend.services import log_buffer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log_buffer.install()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    run_migrations()
     start_scheduler()
     yield
     stop_scheduler()
@@ -35,6 +39,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(sources.router, prefix="/api")
 app.include_router(staging.router, prefix="/api")
 app.include_router(scrapers.router, prefix="/api")
+app.include_router(pipelines.router, prefix="/api")
 app.include_router(imports.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(gsheets.router, prefix="/api")
@@ -44,6 +49,11 @@ app.include_router(sync_configs.router, prefix="/api")
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/logs")
+async def get_logs(n: int = 200):
+    return log_buffer.get_logs(n)
 
 
 @app.get("/api/debug/headers")

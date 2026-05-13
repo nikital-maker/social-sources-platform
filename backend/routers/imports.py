@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from backend.config import get_sources_table
 from backend.dependencies import get_current_user, validate_team
 from backend.models.import_request import ColumnMapping, ImportRequest, ImportResult
-from backend.services.gsheets import get_gsheets_client, parse_gsheet_url, read_worksheet
+from backend.services.gsheets import _execute_with_rotation, parse_gsheet_url, read_worksheet
 from backend.services.import_logic import auto_map, do_import, parse_paste
 
 router = APIRouter(prefix="/import", tags=["imports"])
@@ -99,13 +99,13 @@ async def import_paste(
 async def gsheet_sheets(url: str):
     try:
         spreadsheet_id, _ = parse_gsheet_url(url)
-        gc = get_gsheets_client()
-        spreadsheet = gc.open_by_key(spreadsheet_id)
-        worksheets = spreadsheet.worksheets()
-        return {
-            "name": spreadsheet.title,
-            "tabs": [{"id": ws.id, "title": ws.title} for ws in worksheets],
-        }
+        def _op(client):
+            spreadsheet = client.open_by_key(spreadsheet_id)
+            return {
+                "name": spreadsheet.title,
+                "tabs": [{"id": ws.id, "title": ws.title} for ws in spreadsheet.worksheets()],
+            }
+        return _execute_with_rotation(_op, "gsheet_sheets")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

@@ -59,13 +59,15 @@ Per-team source tables (e.g. `social_sources_child_safety`, `social_sources_hate
 
 **`social_sources_staging`** — raw scraper feed. Same schema plus `scraper_name` and `raw_record` (raw JSON). Rows flow out via Approve (MERGE INTO target + DELETE from staging) or `dedup_job.py`.
 
+**`pipeline_runs`** — stores pipeline execution records. Columns: `id` (UUID), `team`, `pipeline_type` (e.g. `google_dorking`), `status` (`pending`/`running`/`completed`/`failed`), `databricks_run_id`, `config_json` (JSON string of pipeline config), `row_count`, `error_log`, `created_at`, `created_by`, `completed_at`. Results are stored in a separate `pipeline_results` table keyed by `run_id`.
+
 **`gsheet_sync_config`** — stores Google Sheets auto-sync configurations. Each row represents one sheet+tab to periodically pull from. Columns: `id` (UUID), `spreadsheet_id`, `spreadsheet_url`, `spreadsheet_name`, `tab_title`, `gid`, `team`, `mapping_json`, `platform_override`, `manual_values_json`, `meta_mapping_json`, `sync_enabled` (boolean), `sync_interval_minutes`, `last_sync_at`, `last_sync_rows`, `last_sync_error`, `created_at`, `created_by`.
 
 `TABLE_SUFFIX` env var appends a suffix (e.g. `_dev`) to all table names for dev/prod isolation.
 
 ### `backend/` — FastAPI API server
 
-**`backend/main.py`** — FastAPI app. Mounts all routers under `/api`, serves the built React SPA (`frontend/dist/`) as a catch-all route, and provides `/api/health` and `/api/config` endpoints. Uses a lifespan hook to start/stop the background sync scheduler.
+**`backend/main.py`** — FastAPI app. Mounts all routers under `/api`, serves the built React SPA (`frontend/dist/`) as a catch-all route, and provides `/api/health`, `/api/config`, and `/api/logs` endpoints. Uses a lifespan hook to run migrations, start/stop the background sync scheduler, and install the in-memory log buffer handler.
 
 **`backend/config.py`** — Central configuration:
 - `TEAMS` dict maps team display names → table name suffixes. Team selection determines which Delta table is queried.
@@ -83,6 +85,7 @@ Per-team source tables (e.g. `social_sources_child_safety`, `social_sources_hate
 - `jobs.py` (`/api/jobs`) — Databricks job details, trigger, cancel, run status polling + SSE streaming (`/api/jobs/runs/{run_id}/stream`).
 - `gsheets.py` (`/api/gsheets`) — Google Sheets integration endpoints.
 - `sync_configs.py` (`/api/sync-configs`) — CRUD for Google Sheets auto-sync configurations: list, create, update (toggle, interval, mapping), delete, and manual trigger sync.
+- `pipelines.py` (`/api/pipelines`) — pipeline run lifecycle: list (paginated, by team), create (triggers Databricks job), get single run, delete run + results, get paginated results, get recent errors.
 
 **`backend/services/`** — Business logic layer:
 - `databricks_client.py` — `run_query()` → DataFrame, `run_statement()` → None, `get_workspace_client()`, `current_user()`. Uses Databricks Statement Execution API (not SQL connector).
@@ -94,6 +97,9 @@ Per-team source tables (e.g. `social_sources_child_safety`, `social_sources_hate
 - `job_monitor.py` — `get_run_status`, `get_job_details`, `trigger_job`, `cancel_run`, `build_task_graph_data`.
 - `sync_config.py` — CRUD operations for `gsheet_sync_config` table, `run_sync_for_config()` reads a Google Sheet and MERGEs new rows.
 - `sync_scheduler.py` — asyncio background loop that checks all enabled sync configs every 60s and triggers syncs when the configured interval has elapsed. Started/stopped via FastAPI lifespan hook.
+- `pipeline.py` — `create_pipeline_run`, `trigger_google_dorking_job` (calls Databricks Jobs API), `fail_pipeline_run`, `get_pipeline_runs`, `get_pipeline_run`, `delete_pipeline_run`, `get_recent_pipeline_errors`, `get_google_dorking_results`.
+- `migrations.py` — runs schema migrations on startup (idempotent). Currently adds `error_log` column to `pipeline_runs` table.
+- `log_buffer.py` — installs a `BufferHandler` into the root Python logger; stores last 500 log entries in memory. `get_logs(n)` returns the most recent n entries. Exposed via `/api/logs`.
 
 **`backend/models/`** — Pydantic models:
 - `source.py` — `Source`, `SourceCreate`, `SourcesPage`, `DeleteRequest`, `DashboardData`, `DailyCount`.
@@ -101,21 +107,24 @@ Per-team source tables (e.g. `social_sources_child_safety`, `social_sources_hate
 - `job.py` — `ScraperJob`, `JobDetail`, `RunStatus`, `TaskStatus`, `WorkflowConfig`.
 - `gsheet.py` — Google Sheets related models.
 - `sync_config.py` — `SyncConfig`, `SyncConfigCreate`, `SyncConfigUpdate`, `SyncResult`.
+- `pipeline.py` — `GoogleDorkingConfig`, `PipelineRunCreate`, `PipelineRun`, `PipelineRunsPage`, `GoogleDorkingResult`, `PipelineResultsPage`.
 
 ### `frontend/` — React SPA (Vite + TypeScript)
 
 **Stack:** React 19, React Router, TanStack React Query, Axios. Built with Vite. In dev, Vite proxies `/api` to `localhost:8000`.
 
-**`frontend/src/App.tsx`** — Root component. Sets up React Query, React Router, ConfigContext, TeamContext, ToastProvider. Routes are team-scoped: `/:team/sources`, `/:team/import`, `/:team/connected-sheets`, `/:team/review`, `/:team/telegram`, `/:team/dashboard`, plus `/scrapers` and `/diagnostics`.
+**`frontend/src/App.tsx`** — Root component. Sets up React Query, React Router, ConfigContext, TeamContext, ToastProvider. Routes are team-scoped: `/:team/sources`, `/:team/import`, `/:team/connected-sheets`, `/:team/review`, `/:team/telegram`, `/:team/dashboard`, `/:team/pipelines`, `/:team/pipeline-history`, plus `/scrapers` and `/diagnostics`.
 
-**`frontend/src/api/`** — API client modules (`client.ts`, `config.ts`, `sources.ts`, `staging.ts`, `scrapers.ts`, `jobs.ts`, `gsheets.ts`, `syncConfigs.ts`).
+**`frontend/src/api/`** — API client modules (`client.ts`, `config.ts`, `sources.ts`, `staging.ts`, `scrapers.ts`, `jobs.ts`, `gsheets.ts`, `syncConfigs.ts`, `pipelines.ts`).
 
-**`frontend/src/pages/`** — Page components: `SourcesBrowser`, `ImportSources`, `ConnectedSheets`, `PendingReview`, `RunScrapers`, `Dashboard`, `TelegramWorkflow`, `Diagnostics`. Both `SourcesBrowser` and `ConnectedSheets` have Refresh buttons that invalidate React Query caches.
+**`frontend/src/pages/`** — Page components: `SourcesBrowser`, `ImportSources`, `ConnectedSheets`, `PendingReview`, `RunScrapers`, `Dashboard`, `TelegramWorkflow`, `Diagnostics`, `Pipelines`, `PipelineRunHistory`. Both `SourcesBrowser` and `ConnectedSheets` have Refresh buttons that invalidate React Query caches. `Pipelines` polls active runs every 5s; selected run is tracked via `?run=<id>` query param.
 
 **`frontend/src/components/`** — Shared components:
 - `layout/AppShell.tsx` — main layout with sidebar navigation and team selector.
 - `ui/` — reusable primitives: `Button`, `Card`, `Badge`, `Input`, `Spinner`, `Toast` (toast notification system with `ToastProvider` and `useToast` hook), `IntervalPicker` (minutes/hours/days/weeks/months interval selector, stores value as minutes).
 - `jobs/TaskGraph.tsx` — DAG visualisation for Databricks job tasks.
+- `pipelines/GoogleDorkingForm.tsx` — form for configuring a Google Dorking search (keywords, sites, timeframe, num_results, verbatim, advanced options). Parses newline-separated text into arrays.
+- `pipelines/PipelineResults.tsx` — displays run status, config summary, and paginated results table (URL, title, snippet, query) for a completed pipeline run.
 - `shared/ErrorBanner.tsx` — error display component.
 
 **`frontend/src/contexts/`** — `ConfigContext` (app-wide config from `/api/config`), `TeamContext` (selected team).
@@ -138,9 +147,9 @@ Contains Import Sources page logic. Kept in `modules/` (not `pages/`) to avoid S
 
 Builds the frontend if `frontend/dist/` doesn't exist, then starts uvicorn with 4 workers on port 8000. Referenced by `app_fastapi.yaml`.
 
-### `setup_tables.py`
+### `setup_tables.py` / `setup_tables_sources.py` / `setup_tables_pipelines.py`
 
-One-time setup script. Drops and recreates all Delta tables in `af_delivery_dev.data_collection` (team source tables, staging, and gsheet_sync_config). **Note: it DROP TABLE first — do not re-run against a table with live data.**
+One-time setup scripts. `setup_tables.py` drops and recreates all Delta tables (team source tables, staging, gsheet_sync_config). `setup_tables_sources.py` handles source tables only; `setup_tables_pipelines.py` creates `pipeline_runs` and `pipeline_results`. **All use `DROP TABLE IF EXISTS` — do not re-run against tables with live data.**
 
 ### `dedup_job.py`
 
@@ -220,3 +229,5 @@ kill $(lsof -ti:8502)
 - **Connected Sheets → Import flow**: The "+ Connect Sheet" button on Connected Sheets navigates to `/:team/import?tab=gsheet&autosync=1`, pre-selecting the Google Sheets tab with auto-sync enabled. After a successful import with auto-sync, the user is redirected back to Connected Sheets where the new config appears.
 - **Auto-sync interval**: Stored as `sync_interval_minutes` in the database. The `IntervalPicker` UI component converts between minutes/hours/days/weeks/months for display. Default is 1 day (1440 minutes).
 - **`added_by` field**: On Databricks Apps, populated from `X-Databricks-User` header (actual logged-in user). Locally, falls back to the Databricks token owner or `"local_dev"`. Auto-sync background jobs use `current_user()` (service principal), not the person who configured the sync.
+- **Pipeline runs**: `pipeline_runs` and `pipeline_results` tables are created by `setup_tables_pipelines.py`. The `migrations.py` service adds `error_log` to `pipeline_runs` on startup if missing. Pipeline jobs on Databricks must be configured with a matching job ID in config.
+- **In-memory logs**: The `log_buffer` captures up to 500 entries since process start — they are lost on restart. Visible on the Diagnostics page (`/diagnostics`), auto-refreshes every 10s.

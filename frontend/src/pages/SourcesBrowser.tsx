@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { SourceFilters } from '../api/sources'
-import { deleteSources, exportSourcesUrl, getFilterOptions, listSources, wipeAllSources } from '../api/sources'
+import type { Source, SourceFilters } from '../api/sources'
+import { deleteSources, exportSourcesUrl, getFilterOptions, listSources, updateSource, wipeAllSources } from '../api/sources'
 import { ErrorBanner } from '../components/shared/ErrorBanner'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -20,6 +20,7 @@ export function SourcesBrowser() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmWipe, setConfirmWipe] = useState(false)
+  const [editingSource, setEditingSource] = useState<Source | null>(null)
 
   function setFilter(key: keyof SourceFilters, val: string) {
     setFilters((f) => ({ ...f, [key]: val || undefined }))
@@ -230,6 +231,7 @@ export function SourcesBrowser() {
                   <th style={{ width: 40 }}>
                     <input type="checkbox" checked={selected.size === rows.length && rows.length > 0} onChange={toggleAll} />
                   </th>
+                  <th style={{ width: 40 }}></th>
                   <th>URL</th>
                   <th>Platform</th>
                   <th>Abuse Area</th>
@@ -246,6 +248,19 @@ export function SourcesBrowser() {
                   <tr key={s.id}>
                     <td>
                       <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleRow(s.id)} />
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => setEditingSource(s)}
+                        title="Edit"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t-secondary)', padding: '2px 4px', borderRadius: 'var(--r-sm)', lineHeight: 1 }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--t-accent)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--t-secondary)')}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13l-3 1 1-3 8.5-8.5z"/>
+                        </svg>
+                      </button>
                     </td>
                     <td className="cell-link" style={{ wordBreak: 'break-all' }}>
                       <a href={s.url} target="_blank" rel="noopener noreferrer">{s.url}</a>
@@ -279,6 +294,156 @@ export function SourcesBrowser() {
           )}
         </>
       )}
+
+      {editingSource && (
+        <EditModal
+          source={editingSource}
+          team={team}
+          filterOptions={filterOptions}
+          onClose={() => setEditingSource(null)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ['sources', team] })
+            setEditingSource(null)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function EditModal({
+  source,
+  team,
+  filterOptions,
+  onClose,
+  onSaved,
+}: {
+  source: Source
+  team: string
+  filterOptions?: { platforms: string[]; abuse_areas: string[]; sub_abuse_areas: string[]; relevancies: string[] }
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [platform, setPlatform] = useState(source.platform ?? '')
+  const [abuseArea, setAbuseArea] = useState(source.abuse_area ?? '')
+  const [subAbuseArea, setSubAbuseArea] = useState(source.sub_abuse_area ?? '')
+  const [relevancy, setRelevancy] = useState(source.relevancy ?? '')
+  const [notes, setNotes] = useState(source.notes ?? '')
+
+  const mutation = useMutation({
+    mutationFn: () => updateSource(team, source.id, { platform, abuse_area: abuseArea, sub_abuse_area: subAbuseArea, relevancy, notes }),
+    onSuccess: onSaved,
+  })
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const fieldStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4 }
+  const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: 'var(--t-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }
+  const selectStyle: React.CSSProperties = {
+    background: 'var(--surface-2)',
+    border: '1px solid var(--border-2)',
+    borderRadius: 'var(--r-md)',
+    color: 'var(--t-primary)',
+    padding: '7px 10px',
+    fontSize: 14,
+    outline: 'none',
+    width: '100%',
+  }
+  const inputStyle: React.CSSProperties = { ...selectStyle }
+
+  const platforms = filterOptions?.platforms?.length ? filterOptions.platforms : ['Telegram', 'Twitter/X', 'TikTok', 'Instagram', 'YouTube', 'Facebook', 'Other']
+  const relevancies = filterOptions?.relevancies?.length ? filterOptions.relevancies : ['Yes', 'No', 'Low', 'Medium', 'High']
+
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(0,0,0,.55)', backdropFilter: 'blur(2px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <div style={{
+        background: 'var(--surface-1)',
+        border: '1px solid var(--border-2)',
+        borderRadius: 'var(--r-xl)',
+        boxShadow: '0 16px 48px rgba(0,0,0,.4)',
+        padding: '28px 32px',
+        width: '100%',
+        maxWidth: 520,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 20,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Edit Source</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t-secondary)', fontSize: 20, lineHeight: 1, padding: 4 }}>✕</button>
+        </div>
+
+        <div style={{ fontSize: 13, color: 'var(--t-secondary)', wordBreak: 'break-all', padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border-1)' }}>
+          {source.url}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Platform</label>
+            <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={selectStyle}>
+              <option value="">— none —</option>
+              {platforms.map((p) => <option key={p} value={p}>{p}</option>)}
+              {platform && !platforms.includes(platform) && <option value={platform}>{platform}</option>}
+            </select>
+          </div>
+
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Relevancy</label>
+            <select value={relevancy} onChange={(e) => setRelevancy(e.target.value)} style={selectStyle}>
+              <option value="">— none —</option>
+              {relevancies.map((r) => <option key={r} value={r}>{r}</option>)}
+              {relevancy && !relevancies.includes(relevancy) && <option value={relevancy}>{relevancy}</option>}
+            </select>
+          </div>
+
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Abuse Area</label>
+            <input value={abuseArea} onChange={(e) => setAbuseArea(e.target.value)} style={inputStyle} placeholder="e.g. Hate Speech" list="abuse-area-list" />
+            <datalist id="abuse-area-list">
+              {(filterOptions?.abuse_areas ?? []).map((a) => <option key={a} value={a} />)}
+            </datalist>
+          </div>
+
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Sub Abuse Area</label>
+            <input value={subAbuseArea} onChange={(e) => setSubAbuseArea(e.target.value)} style={inputStyle} placeholder="e.g. Antisemitism" list="sub-abuse-area-list" />
+            <datalist id="sub-abuse-area-list">
+              {(filterOptions?.sub_abuse_areas ?? []).map((a) => <option key={a} value={a} />)}
+            </datalist>
+          </div>
+        </div>
+
+        <div style={fieldStyle}>
+          <label style={labelStyle}>Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+            placeholder="Optional notes…"
+          />
+        </div>
+
+        <ErrorBanner error={mutation.error} title="Save failed" />
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" size="sm" loading={mutation.isPending} onClick={() => mutation.mutate()}>
+            Save changes
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

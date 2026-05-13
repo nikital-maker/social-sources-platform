@@ -156,6 +156,30 @@ def insert_source(
     """)
 
 
+def update_source(
+    table: str,
+    source_id: str,
+    platform: str = "",
+    abuse_area: str = "",
+    sub_abuse_area: str = "",
+    notes: str = "",
+    relevancy: str = "",
+) -> None:
+    def s(v: str) -> str:
+        return str(v or "").replace("'", "\\'")
+
+    eid = source_id.replace("'", "\\'")
+    run_statement(f"""
+        UPDATE {table} SET
+          platform = '{s(platform)}',
+          abuse_area = '{s(abuse_area)}',
+          sub_abuse_area = '{s(sub_abuse_area)}',
+          notes = '{s(notes)}',
+          relevancy = '{s(relevancy)}'
+        WHERE id = '{eid}'
+    """)
+
+
 def get_multivalue_options(df: pd.DataFrame, column: str) -> list:
     values: set[str] = set()
     for val in df[column].dropna():
