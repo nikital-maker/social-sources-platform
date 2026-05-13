@@ -1,9 +1,6 @@
 #!/bin/bash
 set -e
 
-echo "Installing Python dependencies..."
-python3 -m pip install -q -r requirements.txt
-
 if [ ! -d "frontend/dist" ]; then
     echo "Building frontend..."
     cd frontend && npm ci && npm run build && cd ..
